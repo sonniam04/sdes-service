@@ -14,6 +14,12 @@ import { AuthGuard, PermissionGuard } from "./auth/guards.js";
 import { TokenService } from "./auth/tokens.js";
 import { UsersController } from "./users/users.controller.js";
 import { UsersService } from "./users/users.service.js";
+import { DocumentsController } from "./documents/documents.controller.js";
+import { DocumentsService } from "./documents/documents.service.js";
+import { QueueService } from "./documents/queue.service.js";
+import { ScannerService } from "./documents/scanner.service.js";
+import { StatusGateway } from "./documents/status.gateway.js";
+import { StorageService } from "./documents/storage.service.js";
 
 @Module({
   imports: [
@@ -28,13 +34,18 @@ import { UsersService } from "./users/users.service.js";
       }),
     }),
   ],
-  controllers: [HealthController, AuthController, UsersController, AuditController],
+  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController],
   providers: [
     { provide: HEALTH_CHECKS, useFactory: (cfg: AppConfig) => buildHealthChecks(cfg), inject: [APP_CONFIG] },
     AuditService,
     TokenService,
     AuthService,
     UsersService,
+    ScannerService,
+    StorageService,
+    QueueService,
+    DocumentsService,
+    StatusGateway,
     // ลำดับสำคัญ: ยืนยันตัวตนก่อน แล้วจึงตรวจสิทธิ์
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },

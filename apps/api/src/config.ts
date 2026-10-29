@@ -22,6 +22,8 @@ export function loadConfig() {
     databaseOwnerUrl:
       process.env.DATABASE_OWNER_URL ??
       `postgresql://${env("POSTGRES_OWNER_USER", "sdes_owner")}:${env("POSTGRES_OWNER_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,
+    /** prefix ของคิว BullMQ — test ใช้ค่าแยกเพื่อไม่ให้ worker ของ dev แย่งงาน */
+    queuePrefix: env("QUEUE_PREFIX", "bull"),
     redisUrl: process.env.REDIS_URL ?? `redis://:${env("REDIS_PASSWORD")}@${hostPort("REDIS_HOST_PORT", "6379")}`,
     s3: {
       endpoint: process.env.S3_ENDPOINT ?? `http://${hostPort("S3_HOST_PORT", "8333")}`,

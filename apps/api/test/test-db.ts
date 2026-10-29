@@ -41,4 +41,5 @@ export function useTestDatabase() {
   if (!urls) return;
   process.env.DATABASE_URL = urls.app;
   process.env.DATABASE_OWNER_URL = urls.owner;
+  process.env.QUEUE_PREFIX = "sdes-test";
 }

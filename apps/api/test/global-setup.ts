@@ -1,10 +1,16 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { connect } from "node:net";
 import { Client } from "pg";
 import { hasDatabase, TEST_DB, urls } from "./test-db.js";
 
 /** สร้างฐาน sdes_test ใหม่ แล้วรัน migration จริงของ @sdes/db */
 export default async function setup() {
+  // ingestion e2e ต้องมี S3 + clamd จริง (dev stack) — CI ไม่มีจึงข้าม
+  const e = process.env;
+  const s3 = await reachable("127.0.0.1", Number(e.S3_HOST_PORT ?? 8333));
+  const clamd = await reachable("127.0.0.1", Number(e.CLAMD_HOST_PORT ?? 3310));
+  if (s3 && clamd && !e.S3_ENDPOINT) process.env.INGESTION_STACK = "1";
   if (!hasDatabase || !urls) return;
   const admin = new Client({ connectionString: urls.admin });
   await admin.connect();
@@ -27,3 +33,12 @@ export default async function setup() {
 }
 
 const quote = (s: string) => `'${s.replace(/'/g, "''")}'`;
+
+function reachable(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = connect(port, host);
+    sock.setTimeout(1000, () => (sock.destroy(), resolve(false)));
+    sock.on("connect", () => (sock.end(), resolve(true)));
+    sock.on("error", () => resolve(false));
+  });
+}

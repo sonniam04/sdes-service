@@ -4,7 +4,7 @@ import { APP_CONFIG, type AppConfig } from "./config.js";
 
 export const PRISMA = Symbol("PRISMA");
 /** client ภายใน $transaction */
-export type Tx = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+export type { Tx } from "@sdes/db";
 
 @Injectable()
 class PrismaLifecycle implements OnModuleDestroy {

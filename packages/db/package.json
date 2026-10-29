@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "@sdes/core": "workspace:*",
     "argon2": "^0.45.1"
   }
 }

@@ -13,6 +13,8 @@ x-app-env: &app-env
   S3_SSE: ${S3_SSE}
   CLAMD_HOST: clamav
   CLAMD_PORT: "3310"
+  JWT_SECRET: ${JWT_SECRET}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
 
 services:
   postgres:
