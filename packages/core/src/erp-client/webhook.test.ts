@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { ErpPayload } from "@sdes/core";
+import type { ErpPayload } from "../index.js";
 import { WebhookErpAdapter, signWebhook } from "./webhook.js";
 
 const SECRET = "whsec-test-1234567890";

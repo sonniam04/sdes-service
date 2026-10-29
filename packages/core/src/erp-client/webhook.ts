@@ -1,6 +1,6 @@
 // ส่ง payload เป็น JSON พร้อมลายเซ็น HMAC-SHA256 (spec erp-sync "Generic webhook adapter", design D4)
 import { createHmac } from "node:crypto";
-import type { ErpAdapter, ErpAttachment, ErpPayload, ErpPushResult } from "@sdes/core";
+import type { ErpAdapter, ErpAttachment, ErpPayload, ErpPushResult } from "../index.js";
 import { syncErrorForStatus, syncNetworkError, syncPermanent } from "./errors.js";
 
 export type WebhookConfig = { url: string; secret: string; timeoutMs?: number };

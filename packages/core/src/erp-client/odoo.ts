@@ -1,6 +1,6 @@
 // สร้างใบแจ้งหนี้ซื้อแบบร่างใน Odoo (spec erp-sync "Odoo vendor bill content", design D3)
 import Decimal from "decimal.js";
-import { withholdingNote, type ErpAdapter, type ErpAttachment, type ErpPayload, type ErpPushResult } from "@sdes/core";
+import { withholdingNote, type ErpAdapter, type ErpAttachment, type ErpPayload, type ErpPushResult } from "../index.js";
 import { syncPermanent } from "./errors.js";
 import type { OdooClient } from "./odoo-client.js";
 

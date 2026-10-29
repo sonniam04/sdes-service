@@ -18,7 +18,6 @@
     "@sdes/core": "workspace:*",
     "@sdes/db": "workspace:*",
     "bullmq": "^6.5.1",
-    "decimal.js": "^10.6.0",
     "ioredis": "^6.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",

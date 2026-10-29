@@ -198,6 +198,8 @@ export class ReviewService {
       }),
     );
     await this.queue.publishStatus({ id: doc.id, docNo: doc.docNo, status: doc.status, at: new Date().toISOString() }).catch(() => {});
+    // เคสไม่เสี่ยงส่งเข้า ERP ได้เลย (worker รอถ้าการส่งอัตโนมัติปิด; reconciler เก็บตกถ้า enqueue ไม่สำเร็จ)
+    if (doc.status === "VERIFIED") await this.queue.enqueueSync([doc.id]).catch(() => {});
     const next = await this.prisma.document.findFirst({
       where: { status: "EXTRACTED", id: { not: id } },
       orderBy: { createdAt: "asc" },
@@ -243,6 +245,7 @@ export class ReviewService {
       }),
     );
     await this.queue.publishStatus({ id: doc.id, docNo: doc.docNo, status: doc.status, at: new Date().toISOString() }).catch(() => {});
+    if (doc.status === "APPROVED") await this.queue.enqueueSync([doc.id]).catch(() => {});
     return { id: doc.id, docNo: doc.docNo, status: doc.status };
   }
 

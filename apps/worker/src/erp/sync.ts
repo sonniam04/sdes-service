@@ -4,6 +4,12 @@ import { Queue, UnrecoverableError, Worker, type Job } from "bullmq";
 import type Redis from "ioredis";
 import {
   ERP_SYNC_QUEUE,
+  OdooErpAdapter,
+  SyncError,
+  WebhookErpAdapter,
+  createOdooClient,
+  syncPermanent,
+  syncTransient,
   STATUS_CHANNEL,
   buildErpPayload,
   erpSyncJobOptions,
@@ -22,10 +28,6 @@ import {
   type ErpConnection,
   type PrismaClient,
 } from "@sdes/db";
-import { SyncError, syncPermanent, syncTransient } from "./errors.js";
-import { createOdooClient } from "./odoo-client.js";
-import { OdooErpAdapter } from "./odoo.js";
-import { WebhookErpAdapter } from "./webhook.js";
 
 const SYSTEM = { kind: "system" } as const;
 /** สถานะที่พร้อมส่ง — VERIFIED ทุกฉบับไม่มีความเสี่ยง (เคสเสี่ยงไป PENDING_APPROVAL ตั้งแต่ยืนยัน) */

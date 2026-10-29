@@ -103,7 +103,7 @@ class JsonRpcClient implements OdooClient {
     if (r?.error) {
       const name = r.error.data?.name ?? "";
       const message = r.error.data?.message ?? r.error.message ?? "";
-      if (/AccessDenied|AccessError/.test(name)) throw syncPermanent(`${TARGET} ไม่รับ API key หรือผู้ใช้ไม่มีสิทธิ์: ${message}`);
+      if (/AccessDenied|AccessError/.test(name)) throw syncPermanent(`${TARGET} ไม่รับ API key หรือผู้ใช้ไม่มีสิทธิ์: ${message}`, undefined, "auth");
       throw syncPermanent(`${TARGET} ปฏิเสธข้อมูล: ${message}`.slice(0, 400));
     }
     return r?.result as T;
@@ -112,7 +112,7 @@ class JsonRpcClient implements OdooClient {
   private async exec<T>(model: string, method: string, args: unknown[], kwargs: Record<string, unknown> = {}): Promise<T> {
     if (this.uid === null) {
       const uid = await this.rpc<number | false>("common", "login", [this.cfg.database, this.cfg.login, this.cfg.apiKey]);
-      if (!uid) throw syncPermanent(`${TARGET} ไม่รับชื่อผู้ใช้หรือ API key`);
+      if (!uid) throw syncPermanent(`${TARGET} ไม่รับชื่อผู้ใช้หรือ API key`, undefined, "auth");
       this.uid = uid;
     }
     return this.rpc<T>("object", "execute_kw", [this.cfg.database, this.uid, this.cfg.apiKey, model, method, args, kwargs]);

@@ -6,6 +6,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DocumentData, Role } from "@sdes/core";
 import { Prisma, type PrismaClient } from "@sdes/db";
+import { QueueService } from "../src/documents/queue.service.js";
 import { hasDatabase } from "./test-db.js";
 import { authed, bootApp, createUser, ownerDb } from "./helpers.js";
 
@@ -266,6 +267,31 @@ describe.skipIf(!hasDatabase)("review (spec document-review + risk-assessment)",
         http().post(`/documents/${d.id}/reject`).set(users.lead2!.h).send({ version: d.version, reason: "ซ้ำ" }),
       ]);
       expect([a.status, b.status].sort()).toEqual([200, 409]);
+    });
+  });
+
+  describe("phase 3 task 4.2 ใส่งานส่ง ERP", () => {
+    const syncJob = (id: string) => app.get(QueueService).sync.getJob(id);
+
+    it("ยืนยันแล้วได้ VERIFIED → มีงานส่ง; PENDING_APPROVAL → ไม่มีงาน", async () => {
+      const taxId = newTaxId();
+      const vendor = await db.vendor.create({ data: { taxId, branchCode: "00000", name: "ผู้ขายเดิม" } });
+      const prior = await extracted({ vendorTaxId: taxId });
+      await db.document.update({ where: { id: prior.id }, data: { status: "APPROVED", vendorId: vendor.id } });
+      const safe = await extracted({ vendorTaxId: taxId });
+      await http().post(`/documents/${safe.id}/verify`).set(users.clerk!.h).send({}).expect(200);
+      expect(await syncJob(safe.id)).toBeTruthy();
+      const risky = await pending();
+      expect(await syncJob(risky.id)).toBeUndefined();
+    });
+
+    it("อนุมัติ → มีงานส่ง; ปฏิเสธ → ไม่มีงาน", async () => {
+      const a = await pending();
+      await http().post(`/documents/${a.id}/approve`).set(users.lead!.h).send({}).expect(200);
+      expect(await syncJob(a.id)).toBeTruthy();
+      const r = await pending();
+      await http().post(`/documents/${r.id}/reject`).set(users.lead!.h).send({ reason: "ไม่ถูกต้อง" }).expect(200);
+      expect(await syncJob(r.id)).toBeUndefined();
     });
   });
 

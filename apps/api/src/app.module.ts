@@ -22,6 +22,8 @@ import { StatusGateway } from "./documents/status.gateway.js";
 import { StorageService } from "./documents/storage.service.js";
 import { ReviewService } from "./documents/review.service.js";
 import { SettingsController } from "./settings/settings.controller.js";
+import { ErpController } from "./erp/erp.controller.js";
+import { ErpService } from "./erp/erp.service.js";
 
 @Module({
   imports: [
@@ -36,11 +38,12 @@ import { SettingsController } from "./settings/settings.controller.js";
       }),
     }),
   ],
-  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController],
+  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController, ErpController],
   providers: [
     { provide: HEALTH_CHECKS, useFactory: (cfg: AppConfig) => buildHealthChecks(cfg), inject: [APP_CONFIG] },
     AuditService,
     ReviewService,
+    ErpService,
     TokenService,
     AuthService,
     UsersService,
