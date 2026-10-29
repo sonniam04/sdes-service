@@ -183,6 +183,9 @@ importers:
       bullmq:
         specifier: ^6.5.1
         version: 6.5.1(ioredis@6.0.0)(pg@8.23.1)
+      decimal.js:
+        specifier: ^10.6.0
+        version: 10.6.0
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0

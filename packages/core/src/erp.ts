@@ -33,6 +33,8 @@ export type ErpPushResult = {
   transactionId: string;
   /** ปลายทางมีรายการของเอกสารนี้อยู่แล้ว จึงใช้รายการเดิม */
   reused: boolean;
+  /** รหัสคู่ค้าใน ERP ที่ใช้ (เก็บกับผู้ขายเพื่อใช้ครั้งต่อไป) */
+  partnerId?: string;
 };
 
 export class ErpPayloadError extends Error {
