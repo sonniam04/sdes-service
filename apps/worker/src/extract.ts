@@ -29,6 +29,11 @@ import type { WorkerConfig } from "./config.js";
 import { ClaudeExtractionProvider } from "./providers/claude.js";
 import { classifyError } from "./providers/errors.js";
 import { FixtureExtractionProvider } from "./providers/fixture.js";
+import { GeminiExtractionProvider } from "./providers/gemini.js";
+import { GoogleGenAI } from "@google/genai";
+
+/** รุ่นเริ่มต้นเมื่อไม่ได้ตั้ง EXTRACTION_MODEL */
+export const DEFAULT_MODELS = { claude: "claude-opus-5-5", gemini: "gemini-3.8-flash" } as const;
 
 const SYSTEM = { kind: "system" } as const;
 
@@ -43,12 +48,18 @@ export function createProvider(name: string, opts: Partial<WorkerConfig["extract
     case "claude":
       if (!opts.anthropicApiKey) throw new Error("EXTRACTION_PROVIDER=claude ต้องตั้ง ANTHROPIC_API_KEY ใน .env");
       return new ClaudeExtractionProvider(new Anthropic({ apiKey: opts.anthropicApiKey }), {
-        model: opts.model ?? "claude-opus-5-5",
+        model: opts.model ?? DEFAULT_MODELS.claude,
         effort: opts.effort ?? "low",
         timeoutMs: opts.timeoutMs ?? 120_000,
       });
+    case "gemini":
+      if (!opts.geminiApiKey) throw new Error("EXTRACTION_PROVIDER=gemini ต้องตั้ง GEMINI_API_KEY ใน .env");
+      return new GeminiExtractionProvider(new GoogleGenAI({ apiKey: opts.geminiApiKey }), {
+        model: opts.model ?? DEFAULT_MODELS.gemini,
+        timeoutMs: opts.timeoutMs ?? 120_000,
+      });
     default:
-      throw new Error(`ไม่รู้จัก EXTRACTION_PROVIDER=${name} (ใช้ได้: fake, fixture, claude)`);
+      throw new Error(`ไม่รู้จัก EXTRACTION_PROVIDER=${name} (ใช้ได้: fake, fixture, claude, gemini)`);
   }
 }
 

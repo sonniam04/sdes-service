@@ -19,7 +19,12 @@ describe("createProvider (task 3.4)", () => {
     expect(createProvider("claude", { anthropicApiKey: "sk-test", model: "claude-opus-5-5" }).name).toBe("claude");
   });
 
+  it("gemini ไม่มี GEMINI_API_KEY → worker หยุดพร้อมข้อความชัดเจน; มี key → สร้างได้", () => {
+    expect(() => createProvider("gemini", {})).toThrow("EXTRACTION_PROVIDER=gemini ต้องตั้ง GEMINI_API_KEY ใน .env");
+    expect(createProvider("gemini", { geminiApiKey: "test-key" }).name).toBe("gemini");
+  });
+
   it("ชื่อที่ไม่รู้จักบอกตัวเลือกที่ใช้ได้", () => {
-    expect(() => createProvider("gpt")).toThrow(/fake, fixture, claude/);
+    expect(() => createProvider("gpt")).toThrow(/fake, fixture, claude, gemini/);
   });
 });

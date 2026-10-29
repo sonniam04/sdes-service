@@ -25,11 +25,13 @@ export function loadWorkerConfig() {
       region: e.S3_REGION ?? "ap-southeast-1",
     },
     queuePrefix: e.QUEUE_PREFIX ?? "bull",
-    /** design D1/D8: fake | fixture | claude */
+    /** design D1/D1b/D8: fake | fixture | claude | gemini */
     extractionProvider: e.EXTRACTION_PROVIDER ?? "fake",
     extraction: {
       anthropicApiKey: e.ANTHROPIC_API_KEY || undefined,
-      model: e.EXTRACTION_MODEL || "claude-opus-5-5",
+      geminiApiKey: e.GEMINI_API_KEY || undefined,
+      /** ไม่ตั้ง = ใช้รุ่นเริ่มต้นของ provider ที่เลือก */
+      model: e.EXTRACTION_MODEL || undefined,
       effort: (e.EXTRACTION_EFFORT || "low") as "low" | "medium" | "high" | "xhigh" | "max",
       timeoutMs: Number(e.EXTRACTION_TIMEOUT_MS ?? "120000"),
       /** โฟลเดอร์เฉลยของ FixtureExtractionProvider */

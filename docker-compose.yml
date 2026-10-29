@@ -106,7 +106,9 @@ services:
       # การอ่านเอกสาร (design D1) — API key อยู่เฉพาะ worker ไม่ส่งให้ api
       EXTRACTION_PROVIDER: ${EXTRACTION_PROVIDER:-fake}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      EXTRACTION_MODEL: ${EXTRACTION_MODEL:-claude-opus-5-5}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # ว่าง = รุ่นเริ่มต้นของ provider (claude-opus-5-5 / gemini-3.8-flash)
+      EXTRACTION_MODEL: ${EXTRACTION_MODEL:-}
       EXTRACTION_EFFORT: ${EXTRACTION_EFFORT:-low}
       EXTRACTION_TIMEOUT_MS: ${EXTRACTION_TIMEOUT_MS:-120000}
       EXTRACTION_FIXTURE_DIR: /fixtures
