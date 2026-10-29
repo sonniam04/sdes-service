@@ -34,6 +34,7 @@
     "socket.io": "^4.8.4"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@nestjs/testing": "^12.3.2",
     "@swc-node/register": "^1.12.1",
     "@swc/core": "^1.16.20",

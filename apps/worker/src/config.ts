@@ -24,9 +24,17 @@ export function loadWorkerConfig() {
       bucket: e.S3_BUCKET ?? "sdes-documents",
       region: e.S3_REGION ?? "ap-southeast-1",
     },
-    /** design D8: เลือก provider ผ่าน config — Phase 1 มีแค่ fake */
     queuePrefix: e.QUEUE_PREFIX ?? "bull",
+    /** design D1/D8: fake | fixture | claude */
     extractionProvider: e.EXTRACTION_PROVIDER ?? "fake",
+    extraction: {
+      anthropicApiKey: e.ANTHROPIC_API_KEY || undefined,
+      model: e.EXTRACTION_MODEL || "claude-opus-5-5",
+      effort: (e.EXTRACTION_EFFORT || "low") as "low" | "medium" | "high" | "xhigh" | "max",
+      timeoutMs: Number(e.EXTRACTION_TIMEOUT_MS ?? "120000"),
+      /** โฟลเดอร์เฉลยของ FixtureExtractionProvider */
+      fixtureDir: e.EXTRACTION_FIXTURE_DIR || e.EXTRACTION_FIXTURE_HOST_DIR || undefined,
+    },
     concurrency: Number(e.WORKER_CONCURRENCY ?? "2"),
     reconcileIntervalMs: 60_000,
     /** เอกสาร UPLOADED ที่ค้างนานกว่านี้โดยไม่มี job จะถูก enqueue ใหม่ */

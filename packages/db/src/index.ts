@@ -4,6 +4,7 @@ export * from "./generated/client/index.js";
 export { seed, DEFAULT_SETTINGS, type SeedOptions, type SeedResult } from "./seed.js";
 export { recordAudit, type AuditActor, type AuditInput, type Tx } from "./audit.js";
 export { transitionDocument, StaleDocumentError, type TransitionInput } from "./transitions.js";
+export { projectDocumentData, loadReviewSettings, findDuplicateInvoice, CONFIRMED_STATUSES, type ReviewSettings } from "./review.js";
 
 /** แอปเชื่อมต่อด้วย role sdes_app (ไม่ใช่ owner) — ส่ง url ของ DATABASE_URL */
 export function createPrisma(url: string): PrismaClient {

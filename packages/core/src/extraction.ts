@@ -117,3 +117,20 @@ const emptyField = () => ({ value: null, confidence: 0, bbox: null });
 export function emptyHeader(): ExtractedHeader {
   return Object.fromEntries(HEADER_FIELDS.map((k) => [k, emptyField()])) as ExtractedHeader;
 }
+
+/** ความมั่นใจ ตำแหน่ง และค่าที่ AI อ่านได้ของแต่ละ field (เก็บใน documents.field_meta) */
+export type FieldMetaEntry = { confidence: number; bbox: BBox | null; aiValue: string | boolean | null };
+/** key คือ FieldPath เช่น `header.grandTotal`, `items[0].amount` */
+export type FieldMeta = Record<string, FieldMetaEntry>;
+
+export function buildFieldMeta(r: Pick<ExtractionResult, "header" | "items">): FieldMeta {
+  const meta: FieldMeta = {};
+  const put = (path: string, f: { value: string | boolean | null; confidence: number; bbox?: BBox | null } | undefined) => {
+    if (f) meta[path] = { confidence: f.confidence, bbox: f.bbox ?? null, aiValue: f.value };
+  };
+  for (const k of HEADER_FIELDS) put(`header.${k}`, r.header[k]);
+  r.items.forEach((item, i) => {
+    for (const k of ["description", "quantity", "unitPrice", "discount", "vat", "amount"] as const) put(`items[${i}].${k}`, item[k]);
+  });
+  return meta;
+}

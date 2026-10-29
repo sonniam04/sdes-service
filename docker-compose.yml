@@ -101,7 +101,18 @@ services:
   worker:
     restart: unless-stopped
     build: { context: ., args: { APP: worker } }
-    environment: *app-env
+    environment:
+      <<: *app-env
+      # การอ่านเอกสาร (design D1) — API key อยู่เฉพาะ worker ไม่ส่งให้ api
+      EXTRACTION_PROVIDER: ${EXTRACTION_PROVIDER:-fake}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EXTRACTION_MODEL: ${EXTRACTION_MODEL:-claude-opus-5-5}
+      EXTRACTION_EFFORT: ${EXTRACTION_EFFORT:-low}
+      EXTRACTION_TIMEOUT_MS: ${EXTRACTION_TIMEOUT_MS:-120000}
+      EXTRACTION_FIXTURE_DIR: /fixtures
+    volumes:
+      # เฉลยของ fixture provider (ชุดทดสอบ) — อ่านอย่างเดียว
+      - ${EXTRACTION_FIXTURE_HOST_DIR:-./.fixtures}:/fixtures:ro
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

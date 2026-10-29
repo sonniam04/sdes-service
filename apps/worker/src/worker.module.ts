@@ -18,7 +18,7 @@ class ExtractRunner implements OnModuleInit, OnApplicationShutdown {
   onModuleInit() {
     const cfg = loadWorkerConfig();
     this.connection = new Redis(cfg.redisUrl, { maxRetriesPerRequest: null });
-    this.deps = { cfg, prisma: createPrisma(cfg.databaseUrl), redis: new Redis(cfg.redisUrl), provider: createProvider(cfg.extractionProvider), s3: createS3(cfg) };
+    this.deps = { cfg, prisma: createPrisma(cfg.databaseUrl), redis: new Redis(cfg.redisUrl), provider: createProvider(cfg.extractionProvider, cfg.extraction), s3: createS3(cfg) };
     this.queue = new Queue<ExtractJob>(EXTRACT_QUEUE, { connection: this.connection, prefix: cfg.queuePrefix });
     this.worker = startExtractWorker(this.deps, this.connection);
     this.worker.on("completed", (job) => this.log.log(`อ่านเอกสาร ${job.data.documentId} เสร็จ`));

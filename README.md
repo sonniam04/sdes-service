@@ -71,6 +71,26 @@ Stack ตั้ง `restart: unless-stopped` ไว้ — บน WSL ถ้า 
 | `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | System Admin คนแรก (รหัสชั่วคราว อย่างน้อย 12 ตัว) |
 | `JWT_SECRET` | ลายเซ็น access token — สุ่มอย่างน้อย 32 bytes |
 | `COOKIE_SECURE` | `true` ใน production (refresh cookie ส่งผ่าน HTTPS เท่านั้น) |
+| `COMPANY_TAX_ID`, `COMPANY_NAME` | บริษัทผู้ซื้อในใบกำกับภาษี ใช้ตรวจ Tax ID ผู้ซื้อ (seed ครั้งแรก — แก้ภายหลังที่หน้าตั้งค่า) |
+| `EXTRACTION_PROVIDER` | ตัวอ่านเอกสารของ worker: `fake` (ผลว่าง, ค่าเริ่มต้น), `fixture` (เฉลยของชุดทดสอบ), `claude` (Claude vision จริง) |
+| `ANTHROPIC_API_KEY` | ต้องมีเมื่อใช้ `claude` — ส่งให้เฉพาะ worker ไม่ส่งให้ api |
+| `EXTRACTION_MODEL`, `EXTRACTION_EFFORT`, `EXTRACTION_TIMEOUT_MS` | รุ่นโมเดล (ค่าเริ่มต้น `claude-opus-5-5`), ระดับ effort (`low`) และเวลาสูงสุดต่อคำขอ (120000 ms) |
+| `EXTRACTION_FIXTURE_HOST_DIR` | โฟลเดอร์ `<sha256>.json` ของ fixture provider (mount เข้า worker ที่ `/fixtures`) |
+
+## การอ่านเอกสารด้วย AI
+
+ค่าเริ่มต้น worker ใช้ provider `fake` ที่คืนผลว่าง เอกสารจึงถึง `EXTRACTED` แต่ไม่มีข้อมูล ถ้าต้องการอ่านจริง:
+
+1. ใส่ `EXTRACTION_PROVIDER=claude` และ `ANTHROPIC_API_KEY=...` ใน `.env` (ห้าม commit)
+2. `docker compose up -d --wait worker`
+3. ถ้าไม่มี key worker จะหยุดตั้งแต่เริ่มพร้อมข้อความบอกว่าขาดอะไร
+
+ข้อควรรู้:
+- **ข้อมูลที่ส่งออกไปภายนอก:** worker ส่งเฉพาะไฟล์เอกสารและคำสั่งอ่านให้ Anthropic API ไม่ส่งชื่อหรืออีเมลผู้ใช้ ต้องใช้บัญชี API เชิงพาณิชย์ที่ไม่นำข้อมูลไปฝึกโมเดล และบันทึกเรื่องนี้ในการประเมิน PDPA
+- **ค่าใช้จ่าย:** ทุกเอกสารเรียก API หนึ่งครั้ง (อ่านใหม่ = เรียกอีกครั้ง) ดูค่าใช้จ่ายต่อฉบับจากรายงานชุดวัดผลใน `qa/phase2/` ของ repo วางแผน
+- **ล้มเหลวชั่วคราว** (429, 5xx, หมดเวลา) ลองใหม่อัตโนมัติรวม 3 ครั้ง; **ล้มเหลวถาวร** (PDF ล็อกรหัสผ่าน, ไฟล์เสีย, ถูกปฏิเสธ) เป็น `FAILED` ทันทีพร้อมเหตุผล ทุกรอบถูกเก็บใน `document_extractions`
+- TIFF ถูกแปลงเป็น PNG ทีละหน้าก่อนส่ง ภาพที่ใหญ่เกินถูกย่อ (ตำแหน่งที่อ่านได้เป็นพิกัดสัดส่วนของหน้า จึงไม่กระทบ)
+- **E2E/CI** ใช้ `EXTRACTION_PROVIDER=fixture` กับเฉลยของชุดทดสอบ จึงไม่เรียก API จริง
 
 ## ทดสอบ
 
