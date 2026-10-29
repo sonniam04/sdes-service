@@ -18,6 +18,7 @@ Backend ของ SDES — Smart Document Extraction & ERP Sync Pipeline
   - บน Windows: ติดตั้ง Docker ใน WSL (Ubuntu) แล้วสั่งผ่าน `wsl docker ...` — ไม่ต้องใช้ Docker Desktop
   - เรียก service จาก Windows ด้วย `127.0.0.1` ไม่ใช่ `localhost` (localhost อาจไปที่ IPv6 ซึ่ง WSL ไม่ได้ forward)
 - RAM ว่างประมาณ 3–4 GB (ClamAV ใช้ราว 1–1.5 GB)
+- บน Windows ให้ clone ไว้ใน path ที่ไม่ลึกเกินไป — path ของ Prisma engine ใน `node_modules` ยาวกว่าตัว repo ราว 130 ตัวอักษร ถ้ารวมแล้วเกิน 260 คำสั่ง migrate จะล้มด้วย `spawn ... ENOENT`
 
 ## รันครั้งแรก
 
