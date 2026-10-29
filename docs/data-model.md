@@ -28,12 +28,13 @@ erDiagram
   users { uuid id PK; text email UK; text password_hash; text external_subject UK; bool is_active; bool must_change_password; int failed_login_count; timestamptz locked_until }
   user_roles { uuid user_id PK; Role role PK }
   refresh_tokens { uuid id PK; text token_hash UK; uuid family_id; timestamptz expires_at; timestamptz used_at; timestamptz revoked_at }
-  vendors { uuid id PK; char13 tax_id; char5 branch_code; text name }
+  vendors { uuid id PK; char13 tax_id; char5 branch_code; text name; text erp_partner_id }
   documents { uuid id PK; text doc_no UK; DocumentStatus status; char64 sha256; text storage_key UK; int version; numeric grand_total; numeric wht_base; numeric net_payable; jsonb data; jsonb field_meta; jsonb validation_issues; uuid verified_by FK }
   document_extractions { uuid id PK; text provider; text model_version; numeric confidence; jsonb raw; jsonb items; int duration_ms; text error }
   document_status_history { bigint id PK; DocumentStatus from_status; DocumentStatus to_status; ActorType actor_type; text reason }
   settings { text key PK; jsonb value }
-  erp_sync_attempts { uuid id PK; text adapter; int attempt; text status; text transaction_id }
+  erp_connections { int id PK; text adapter; text url; jsonb config; bytea secret_ciphertext; bool auto_sync; text tested_hash }
+  erp_sync_attempts { uuid id PK; text adapter; int attempt; text status; text transaction_id; bool reused }
   audit_events { bigint id PK; timestamptz occurred_at; ActorType actor_type; uuid actor_user_id; text action; text entity_type; text entity_id; text ip; jsonb details }
 ```
 
@@ -44,12 +45,13 @@ erDiagram
 | `users` | บัญชีผู้ใช้ | `email` unique (เก็บเป็นตัวพิมพ์เล็ก)<br>`password_hash` เป็น argon2id<br>`external_subject` เว้นไว้สำหรับ OIDC/SSO<br>`must_change_password` บังคับเปลี่ยนรหัสชั่วคราว<br>`failed_login_count` + `locked_until` ใช้ล็อกบัญชี 15 นาทีเมื่อรหัสผิด 5 ครั้ง |
 | `user_roles` | role ของผู้ใช้ (มีได้หลาย role) | role มี 4 ค่า: `AP_CLERK`, `AP_LEAD`, `FINANCE_EXEC`, `SYS_ADMIN`<br>ผู้ใช้ต้องมีอย่างน้อย 1 role (บังคับที่แอป) |
 | `refresh_tokens` | refresh token แบบหมุนเวียน | เก็บเฉพาะ hash<br>`family_id` ใช้ revoke ทั้งชุดเมื่อพบการใช้ token ซ้ำ (`used_at` มีค่าแล้ว) |
-| `vendors` | ทะเบียนผู้ขาย | `(tax_id, branch_code)` unique<br>`tax_id` ต้องเป็นตัวเลข 13 หลัก (CHECK)<br>สาขาสำนักงานใหญ่ = `00000` |
+| `vendors` | ทะเบียนผู้ขาย | `(tax_id, branch_code)` unique<br>`tax_id` ต้องเป็นตัวเลข 13 หลัก (CHECK)<br>สาขาสำนักงานใหญ่ = `00000`<br>`erp_partner_id` รหัสคู่ค้าใน ERP ที่จับคู่หรือสร้างไว้ ใช้ซ้ำในการส่งครั้งต่อไป |
 | `documents` | เอกสารหนึ่งฉบับ = หนึ่งไฟล์ | ดูหัวข้อ "documents" ด้านล่าง |
 | `document_extractions` | ผลอ่านจาก AI provider แต่ละรอบ (รวมรอบที่ล้มเหลว) | เก็บ `raw` ไว้ตรวจย้อนหลัง<br>`items` เป็น JSONB (ลำดับ, รายการ, จำนวน, ราคาต่อหน่วย, ภาษี, ยอด, bbox, confidence) เป็นค่าที่ AI อ่าน แก้ไม่ได้<br>`duration_ms` เวลาที่ใช้อ่าน (KPI <30 วินาที), `error` เหตุผลเมื่อรอบนั้นไม่สำเร็จ |
 | `document_status_history` | ประวัติการเปลี่ยนสถานะ | เขียนใน transaction เดียวกับการเปลี่ยนสถานะ<br>`actor_type` = USER/SYSTEM<br>การปฏิเสธต้องมี `reason` |
+| `erp_connections` | การเชื่อมต่อ ERP (แถวเดียว `id = 1`, CHECK) | `adapter` (`odoo`/`webhook`), `url`, `database`, `config` (`apiMode`, `login`, `journalId`, `purchaseTaxId`, `expenseAccountId`)<br>API key/secret เก็บเป็น `secret_ciphertext` + `secret_iv` + `secret_tag` (AES-256-GCM ด้วย `ERP_SECRET_KEY` ที่อยู่นอกฐานข้อมูล)<br>`auto_sync` เปิดได้เมื่อ `tested_hash` ตรงกับ hash ของการตั้งค่าปัจจุบัน |
 | `settings` | การตั้งค่าที่ Admin แก้ได้ | ค่าเริ่มต้นจาก seed: `risk.confidence_threshold = 0.85`, `risk.high_amount_threshold = null` (รอฝ่ายบัญชี), `company.tax_id` / `company.name` (จาก `COMPANY_TAX_ID` / `COMPANY_NAME` หรือ null)<br>seed ไม่เขียนทับค่าที่มีอยู่แล้ว |
-| `erp_sync_attempts` | ประวัติการส่งเข้า ERP | สร้างโครงไว้สำหรับ Phase 3 |
+| `erp_sync_attempts` | ประวัติการส่งเข้า ERP หนึ่งแถวต่อการลองส่งหนึ่งครั้ง | `attempt` ครั้งที่, `adapter`, `status`, `transaction_id`, `error`, เวลาส่ง/ตอบ<br>`reused` = ERP มีรายการของเอกสารนี้อยู่แล้ว จึงใช้รายการเดิม (กันส่งซ้ำ) |
 | `audit_events` | audit trail | ดูหัวข้อ "audit_events" ด้านล่าง |
 
 ### documents
@@ -72,6 +74,7 @@ erDiagram
 - **`field_meta`** (JSONB) ราย field: ความมั่นใจ, ตำแหน่ง (`bbox` พิกัดสัดส่วนของหน้า) และค่าที่ AI อ่านได้ ใช้ไฮไลต์บนหน้าตรวจและบอกว่า field ไหนถูกแก้
 - **`validation_issues`** (JSONB) ผลตรวจล่าสุด (`code`, `severity`, `message`, `fields`) คำนวณใหม่ทุกครั้งที่บันทึก
 - **`vendor_tax_id` / `vendor_branch` / `vendor_name` / `buyer_branch`** ค่าจากเอกสาร (ส่วน `vendor_id` ผูกกับทะเบียนตอนยืนยัน)
+- **`erp_transaction_id` / `synced_at` / `sync_error`** เลขอ้างอิงใน ERP และเวลาหลังส่งสำเร็จ / เหตุผลล่าสุดที่ส่งไม่สำเร็จ (แสดงในหน้าจอ; รายละเอียดทุกครั้งอยู่ใน `erp_sync_attempts`)
 - **`verified_by` / `verified_at`** ผู้ยืนยันและเวลา ใช้ตรวจการแยกหน้าที่ (ผู้ยืนยันอนุมัติเองไม่ได้)
 - **`(vendor_id, invoice_no)`** มี partial unique index `documents_vendor_invoice_confirmed_key` เฉพาะสถานะที่ยืนยันแล้ว (`VERIFIED` ขึ้นไป ยกเว้น `REJECTED`) กันเลขที่ใบแจ้งหนี้ซ้ำเมื่อยืนยันพร้อมกัน
 
@@ -86,6 +89,7 @@ erDiagram
 
 - `20261029043336_init`: ตารางทั้งหมด, sequence, สิทธิ์ของ `sdes_app`, trigger ของ audit, partial unique index และ CHECK
 - `20261029050000_app_role_hardening`: `sdes_app` เข้าถึง `_prisma_migrations` ไม่ได้
+- `*_phase3_erp_sync`: `erp_connections`, `vendors.erp_partner_id` (รหัสคู่ค้าใน ERP), `documents.erp_transaction_id/synced_at/sync_error`, `erp_sync_attempts.reused`
 - `20261029094400_phase2_review_data`: column สำหรับการตรวจแก้ (`data`, `field_meta`, `validation_issues`, ข้อมูลผู้ขาย/ผู้ซื้อ, ผู้ยืนยัน), `duration_ms`/`error` ของ `document_extractions` และ partial unique index เลขที่ใบแจ้งหนี้
 
 **คำสั่ง (ใน `Service/`):**

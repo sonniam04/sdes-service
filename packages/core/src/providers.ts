@@ -1,5 +1,6 @@
 // Interface ที่สลับ implementation ได้ (design D8) — เลือกผ่าน config EXTRACTION_PROVIDER / ERP_ADAPTER
 
+import type { ErpAttachment, ErpPayload, ErpPushResult } from "./erp.js";
 import { emptyHeader, type ExtractionResult } from "./extraction.js";
 
 export interface ExtractionProvider {
@@ -7,12 +8,10 @@ export interface ExtractionProvider {
   extract(input: { file: Uint8Array; mime: string; pages?: number }): Promise<ExtractionResult>;
 }
 
-export type SignedErpPayload = { body: string; signature: string; idempotencyKey: string };
-
+/** ส่งเอกสารเข้า ERP (design D2) — implementation อยู่ใน worker (Odoo, webhook) */
 export interface ErpAdapter {
   readonly name: string;
-  push(payload: SignedErpPayload): Promise<{ transactionId: string }>;
-  health(): Promise<boolean>;
+  push(payload: ErpPayload, attachment?: ErpAttachment): Promise<ErpPushResult>;
 }
 
 /** Provider จำลอง: คืนผลว่าง confidence 0 เพื่อพิสูจน์เส้นทาง ingestion */

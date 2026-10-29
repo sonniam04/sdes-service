@@ -85,12 +85,14 @@ model RefreshToken {
 }
 
 model Vendor {
-  id         String     @id @default(uuid()) @db.Uuid
-  taxId      String     @map("tax_id") @db.Char(13)
-  branchCode String     @default("00000") @map("branch_code") @db.Char(5)
-  name       String
-  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  documents  Document[]
+  id           String     @id @default(uuid()) @db.Uuid
+  taxId        String     @map("tax_id") @db.Char(13)
+  branchCode   String     @default("00000") @map("branch_code") @db.Char(5)
+  name         String
+  /// รหัสคู่ค้า (res.partner) ใน ERP ที่จับคู่หรือสร้างไว้แล้ว
+  erpPartnerId String?    @map("erp_partner_id")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  documents    Document[]
 
   @@unique([taxId, branchCode])
   @@map("vendors")
@@ -146,6 +148,12 @@ model Document {
 
   verifiedById String?   @map("verified_by") @db.Uuid
   verifiedAt   DateTime? @map("verified_at") @db.Timestamptz(6)
+
+  /// เลขอ้างอิงของเอกสารใน ERP หลังส่งสำเร็จ
+  erpTransactionId String?   @map("erp_transaction_id")
+  syncedAt         DateTime? @map("synced_at") @db.Timestamptz(6)
+  /// เหตุผลล่าสุดที่ส่งเข้า ERP ไม่สำเร็จ (แสดงในหน้าจอ)
+  syncError        String?   @map("sync_error")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -216,6 +224,8 @@ model ErpSyncAttempt {
   status        String
   transactionId String?   @map("transaction_id")
   error         String?
+  /// ERP มีรายการของเอกสารนี้อยู่แล้ว จึงใช้รายการเดิม
+  reused        Boolean   @default(false)
   requestedAt   DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
   respondedAt   DateTime? @map("responded_at") @db.Timestamptz(6)
   document      Document  @relation(fields: [documentId], references: [id], onDelete: Restrict)
@@ -242,4 +252,27 @@ model AuditEvent {
   @@index([entityType, entityId, occurredAt])
   @@index([action, occurredAt])
   @@map("audit_events")
+}
+
+/// การเชื่อมต่อ ERP (แถวเดียว id = 1) — secret เข้ารหัส AES-256-GCM ด้วย ERP_SECRET_KEY (design D5)
+model ErpConnection {
+  id               Int       @id @default(1)
+  /// odoo | webhook
+  adapter          String
+  url              String
+  /// ชื่อฐานข้อมูลของ Odoo (ว่างได้ถ้ามีฐานเดียว)
+  database         String?
+  /// apiMode, login, journalId, purchaseTaxId, expenseAccountId
+  config           Json      @default("{}")
+  secretCiphertext Bytes?    @map("secret_ciphertext")
+  secretIv         Bytes?    @map("secret_iv")
+  secretTag        Bytes?    @map("secret_tag")
+  autoSync         Boolean   @default(false) @map("auto_sync")
+  testedAt         DateTime? @map("tested_at") @db.Timestamptz(6)
+  /// hash ของการตั้งค่าที่ทดสอบผ่านล่าสุด — ไม่ตรงกับปัจจุบัน = ต้องทดสอบใหม่ก่อนเปิดส่งอัตโนมัติ
+  testedHash       String?   @map("tested_hash")
+  updatedById      String?   @map("updated_by") @db.Uuid
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("erp_connections")
 }

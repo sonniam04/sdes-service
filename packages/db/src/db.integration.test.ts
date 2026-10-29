@@ -121,6 +121,35 @@ describe.skipIf(!hasDatabase)("database (integration)", () => {
       });
     });
 
+    describe("การเชื่อมต่อ ERP (phase 3 task 2.1)", () => {
+      it("migration เพิ่ม column ของการส่ง ERP ครบ", async () => {
+        const r = await pg.query(
+          `SELECT table_name || '.' || column_name AS c FROM information_schema.columns
+           WHERE (table_name, column_name) IN (('documents','erp_transaction_id'),('documents','synced_at'),('documents','sync_error'),
+             ('vendors','erp_partner_id'),('erp_sync_attempts','reused'),('erp_connections','secret_ciphertext'),('erp_connections','auto_sync'))`,
+        );
+        expect(r.rowCount).toBe(7);
+      });
+
+      it("erp_connections มีได้แถวเดียว (id = 1)", async () => {
+        await pg.query("BEGIN");
+        try {
+          await expect(
+            pg.query("INSERT INTO erp_connections (id, adapter, url, updated_at) VALUES (2, 'odoo', 'http://x', now())"),
+          ).rejects.toThrow(/erp_connections_single_row/);
+        } finally {
+          await pg.query("ROLLBACK");
+        }
+      });
+
+      it("sdes_app อ่าน/เขียนการเชื่อมต่อได้", async () => {
+        const r = await asApp(
+          "INSERT INTO erp_connections (id, adapter, url, updated_at) VALUES (1, 'odoo', 'http://x', now()) ON CONFLICT (id) DO UPDATE SET url = EXCLUDED.url RETURNING id",
+        );
+        expect(r.rows[0].id).toBe(1);
+      });
+    });
+
     it("sdes_app แตะตาราง _prisma_migrations ไม่ได้", async () => {
       await expect(asApp("SELECT 1 FROM _prisma_migrations LIMIT 1")).rejects.toThrow(/permission denied/);
     });

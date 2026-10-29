@@ -14,6 +14,8 @@ x-app-env: &app-env
   CLAMD_HOST: clamav
   CLAMD_PORT: "3310"
   JWT_SECRET: ${JWT_SECRET}
+  # api เข้ารหัส/ทดสอบ, worker ถอดรหัสเพื่อส่งเข้า ERP
+  ERP_SECRET_KEY: ${ERP_SECRET_KEY:-}
   COOKIE_SECURE: ${COOKIE_SECURE:-false}
 
 services:
