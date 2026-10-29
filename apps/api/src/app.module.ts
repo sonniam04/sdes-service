@@ -23,6 +23,7 @@ import { StorageService } from "./documents/storage.service.js";
 import { ReviewService } from "./documents/review.service.js";
 import { SettingsController } from "./settings/settings.controller.js";
 import { ErpController } from "./erp/erp.controller.js";
+import { OpsController } from "./erp/ops.controller.js";
 import { ErpService } from "./erp/erp.service.js";
 
 @Module({
@@ -38,7 +39,7 @@ import { ErpService } from "./erp/erp.service.js";
       }),
     }),
   ],
-  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController, ErpController],
+  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController, ErpController, OpsController],
   providers: [
     { provide: HEALTH_CHECKS, useFactory: (cfg: AppConfig) => buildHealthChecks(cfg), inject: [APP_CONFIG] },
     AuditService,

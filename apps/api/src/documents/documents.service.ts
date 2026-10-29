@@ -183,6 +183,8 @@ export class DocumentsService {
         grandTotal: d.grandTotal?.toFixed(2) ?? null,
         confidence: d.confidence?.toString() ?? null,
         riskFlags: d.riskFlags,
+        erpTransactionId: d.erpTransactionId,
+        syncError: d.status === "SYNC_FAILED" ? d.syncError : null,
         createdAt: d.createdAt,
         updatedAt: d.updatedAt,
       })),
@@ -193,15 +195,31 @@ export class DocumentsService {
   async get(id: string) {
     const d = await this.prisma.document.findUnique({
       where: { id },
-      include: { statusHistory: { orderBy: { id: "asc" } }, vendor: true, uploadedBy: { select: { displayName: true } } },
+      include: {
+        statusHistory: { orderBy: { id: "asc" } },
+        vendor: true,
+        uploadedBy: { select: { displayName: true } },
+        syncAttempts: { orderBy: [{ requestedAt: "asc" }, { attempt: "asc" }] },
+      },
     });
     if (!d) throw new NotFoundException("ไม่พบเอกสาร");
     const actorIds = [...new Set(d.statusHistory.map((h) => h.actorUserId).filter((x): x is string => !!x))];
     const actors = await this.prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, displayName: true } });
     const name = new Map(actors.map((a) => [a.id, a.displayName]));
-    const { statusHistory, storageKey: _key, ...doc } = d;
+    const { statusHistory, syncAttempts, storageKey: _key, ...doc } = d;
     return {
       ...doc,
+      // ประวัติการส่งเข้า ERP ทุกครั้ง (spec erp-sync "Attempt history")
+      syncAttempts: syncAttempts.map((a) => ({
+        attempt: a.attempt,
+        adapter: a.adapter,
+        status: a.status,
+        transactionId: a.transactionId,
+        reused: a.reused,
+        error: a.error,
+        requestedAt: a.requestedAt,
+        respondedAt: a.respondedAt,
+      })),
       confidence: d.confidence?.toString() ?? null,
       history: statusHistory.map((h) => ({
         id: h.id.toString(),

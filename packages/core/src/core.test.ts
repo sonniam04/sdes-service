@@ -93,8 +93,8 @@ describe("permission matrix (spec user-access)", () => {
       "document.verify",
       "document.approve",
     ],
-    FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all"],
-    SYS_ADMIN: ["audit.view_all", "user.manage", "settings.manage", "erp.configure", "apikey.manage", "sync.resend"],
+    FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all", "ops.view"],
+    SYS_ADMIN: ["audit.view_all", "user.manage", "settings.manage", "erp.configure", "apikey.manage", "sync.resend", "ops.view"],
   };
 
   // ตาราง role × action ครบทุกช่อง
