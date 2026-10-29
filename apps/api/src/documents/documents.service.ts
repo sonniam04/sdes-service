@@ -173,8 +173,12 @@ export class DocumentsService {
         docNo: d.docNo,
         status: d.status,
         fileName: d.fileName,
-        vendorName: d.vendor?.name ?? null,
+        vendorName: d.vendor?.name ?? d.vendorName ?? null,
         invoiceNo: d.invoiceNo,
+        // จำนวนรายการที่ต้องแก้ก่อนยืนยัน (ผลตรวจระดับ ERROR) แสดงในคิว
+        issueCount: Array.isArray(d.validationIssues)
+          ? (d.validationIssues as { severity?: string }[]).filter((i) => i.severity === "ERROR").length
+          : 0,
         invoiceDate: d.invoiceDate,
         grandTotal: d.grandTotal?.toFixed(2) ?? null,
         confidence: d.confidence?.toString() ?? null,
