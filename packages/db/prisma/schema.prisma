@@ -51,9 +51,10 @@ model User {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  roles         UserRole[]
-  refreshTokens RefreshToken[]
-  documents     Document[]     @relation("UploadedBy")
+  roles             UserRole[]
+  refreshTokens     RefreshToken[]
+  documents         Document[]     @relation("UploadedBy")
+  verifiedDocuments Document[]     @relation("VerifiedBy")
 
   @@map("users")
 }
@@ -68,16 +69,16 @@ model UserRole {
 }
 
 model RefreshToken {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @map("user_id") @db.Uuid
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
   /// เก็บเฉพาะ hash ของ token
-  tokenHash  String    @unique @map("token_hash")
-  familyId   String    @map("family_id") @db.Uuid
-  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
-  usedAt     DateTime? @map("used_at") @db.Timestamptz(6)
-  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  user       User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tokenHash String    @unique @map("token_hash")
+  familyId  String    @map("family_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([familyId])
   @@map("refresh_tokens")
@@ -131,10 +132,26 @@ model Document {
   whtAmount   Decimal?  @map("wht_amount") @db.Decimal(18, 2)
   netPayable  Decimal?  @map("net_payable") @db.Decimal(18, 2)
 
+  vendorTaxId  String? @map("vendor_tax_id") @db.Char(13)
+  vendorBranch String? @map("vendor_branch") @db.Char(5)
+  vendorName   String? @map("vendor_name")
+  buyerBranch  String? @map("buyer_branch") @db.Char(5)
+
+  /// ข้อมูลที่ตรวจ/แก้ได้ทั้งชุดเป็นสตริง (DocumentData ของ core) — column typed ด้านบนคัดลอกเฉพาะค่าที่ถูกรูปแบบ
+  data             Json @default("{}")
+  /// ความมั่นใจ ตำแหน่ง และค่าที่ AI อ่านได้ราย field
+  fieldMeta        Json @default("{}") @map("field_meta")
+  /// ผลตรวจล่าสุดจาก validateDocument
+  validationIssues Json @default("[]") @map("validation_issues")
+
+  verifiedById String?   @map("verified_by") @db.Uuid
+  verifiedAt   DateTime? @map("verified_at") @db.Timestamptz(6)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   uploadedBy    User                    @relation("UploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  verifiedBy    User?                   @relation("VerifiedBy", fields: [verifiedById], references: [id], onDelete: Restrict)
   vendor        Vendor?                 @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   extractions   DocumentExtraction[]
   statusHistory DocumentStatusHistory[]
@@ -155,6 +172,10 @@ model DocumentExtraction {
   raw          Json
   /// รายการสินค้า: ลำดับ รายการ จำนวน ราคาต่อหน่วย ภาษี ยอดสุทธิ bbox confidence
   items        Json     @default("[]")
+  /// เวลาที่ใช้อ่าน (KPI <30 วินาที)
+  durationMs   Int?     @map("duration_ms")
+  /// เหตุผลเมื่อรอบนี้อ่านไม่สำเร็จ
+  error        String?
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   document     Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
 

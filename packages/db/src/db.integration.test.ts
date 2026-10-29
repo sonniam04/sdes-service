@@ -79,6 +79,48 @@ describe.skipIf(!hasDatabase)("database (integration)", () => {
       expect(r.rows[0].indexdef).toMatch(/WHERE \(status <> 'FAILED'/);
     });
 
+    describe("เลขที่ใบแจ้งหนี้ของผู้ขายเดียวกันยืนยันซ้ำไม่ได้ (phase 2 task 2.1)", () => {
+      /** สร้างผู้ใช้ ผู้ขาย และเอกสารตามสถานะที่ให้ ภายใน transaction ที่ rollback เสมอ */
+      async function insertDocs(statuses: string[]) {
+        await pg.query("BEGIN");
+        try {
+          const u = await pg.query(
+            "INSERT INTO users (id, email, display_name, updated_at) VALUES (gen_random_uuid(), $1, 'test', now()) RETURNING id",
+            [`dup-${randomUUID()}@test.local`],
+          );
+          const v = await pg.query(
+            "INSERT INTO vendors (id, tax_id, branch_code, name) VALUES (gen_random_uuid(), '0105536000011', $1, 'ผู้ขายทดสอบ') RETURNING id",
+            [String(Math.floor(Math.random() * 99999)).padStart(5, "0")],
+          );
+          for (const status of statuses) {
+            await pg.query(
+              `INSERT INTO documents (id, status, sha256, file_name, mime_type, size_bytes, storage_key, uploaded_by, vendor_id, invoice_no, updated_at)
+               VALUES (gen_random_uuid(), $1, $2, 'a.pdf', 'application/pdf', 1, $3, $4, $5, 'INV-DUP-1', now())`,
+              [status, randomUUID().replace(/-/g, "").padEnd(64, "0"), `test/${randomUUID()}`, u.rows[0].id, v.rows[0].id],
+            );
+          }
+        } finally {
+          await pg.query("ROLLBACK");
+        }
+      }
+
+      it("migration เพิ่ม column ใหม่ครบ", async () => {
+        const r = await pg.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_name = 'documents' AND column_name = ANY($1)",
+          [["data", "field_meta", "validation_issues", "vendor_tax_id", "vendor_branch", "vendor_name", "buyer_branch", "verified_by", "verified_at"]],
+        );
+        expect(r.rowCount).toBe(9);
+      });
+
+      it("VERIFIED สองฉบับเลขเดียวกันถูกปฏิเสธ", async () => {
+        await expect(insertDocs(["VERIFIED", "PENDING_APPROVAL"])).rejects.toThrow(/documents_vendor_invoice_confirmed_key/);
+      });
+
+      it("ฉบับที่ถูกปฏิเสธหรือยังไม่ยืนยันซ้ำได้", async () => {
+        await expect(insertDocs(["VERIFIED", "REJECTED", "REJECTED", "EXTRACTED"])).resolves.toBeUndefined();
+      });
+    });
+
     it("sdes_app แตะตาราง _prisma_migrations ไม่ได้", async () => {
       await expect(asApp("SELECT 1 FROM _prisma_migrations LIMIT 1")).rejects.toThrow(/permission denied/);
     });
@@ -112,6 +154,31 @@ describe.skipIf(!hasDatabase)("database (integration)", () => {
       } finally {
         await prisma.setting.update({ where: { key: "risk.confidence_threshold" }, data: { value: 0.85 } });
       }
+    });
+
+    it("seed Tax ID/ชื่อบริษัทจาก env โดยไม่ทับค่าที่ Admin แก้แล้ว (phase 2 task 2.2)", async () => {
+      const key = "company.tax_id";
+      const before = await prisma.setting.findUnique({ where: { key } });
+      await seed(prisma, { adminEmail: `seed-${randomUUID()}@test.local`, adminPassword: "temporary-pass-123" });
+      await prisma.setting.update({ where: { key }, data: { value: "0994000165617" } });
+      try {
+        await seed(prisma, {
+          adminEmail: `seed-${randomUUID()}@test.local`,
+          adminPassword: "temporary-pass-123",
+          companyTaxId: "0105536000011",
+          companyName: "บริษัทอื่น",
+        });
+        expect((await prisma.setting.findUnique({ where: { key } }))?.value).toBe("0994000165617");
+        expect(await prisma.setting.findUnique({ where: { key: "company.name" } })).not.toBeNull();
+      } finally {
+        await prisma.setting.update({ where: { key }, data: { value: (before?.value ?? null) as never } });
+      }
+    });
+
+    it("ปฏิเสธ COMPANY_TAX_ID ที่ไม่ถูกต้อง", async () => {
+      await expect(
+        seed(prisma, { adminEmail: "x@test.local", adminPassword: "temporary-pass-123", companyTaxId: "0105536000014" }),
+      ).rejects.toThrow(/COMPANY_TAX_ID/);
     });
 
     it("ปฏิเสธรหัสผ่านสั้นเกิน", async () => {

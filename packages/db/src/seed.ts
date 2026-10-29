@@ -1,4 +1,5 @@
 import argon2 from "argon2";
+import { isValidTaxId, normalizeTaxId } from "@sdes/core";
 import type { PrismaClient } from "./generated/client/index.js";
 
 /** ค่าเริ่มต้นของการตั้งค่า — seed จะไม่เขียนทับค่าที่ Admin แก้แล้ว */
@@ -6,9 +7,12 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
   "risk.confidence_threshold": 0.85,
   // รอฝ่ายบัญชีกำหนด (design Open Questions) — null = ยังไม่ใช้เกณฑ์ยอดเงินสูง
   "risk.high_amount_threshold": null,
+  // Tax ID และชื่อบริษัท ใช้ตรวจผู้ซื้อในใบกำกับภาษี — seed จาก COMPANY_TAX_ID / COMPANY_NAME ถ้ามี
+  "company.tax_id": null,
+  "company.name": null,
 };
 
-export type SeedOptions = { adminEmail: string; adminPassword: string };
+export type SeedOptions = { adminEmail: string; adminPassword: string; companyTaxId?: string; companyName?: string };
 export type SeedResult = { adminCreated: boolean; settingsCreated: string[] };
 
 /**
@@ -18,6 +22,12 @@ export type SeedResult = { adminCreated: boolean; settingsCreated: string[] };
 export async function seed(prisma: PrismaClient, opts: SeedOptions): Promise<SeedResult> {
   const email = opts.adminEmail.trim().toLowerCase();
   if (opts.adminPassword.length < 12) throw new Error("SEED_ADMIN_PASSWORD ต้องยาวอย่างน้อย 12 ตัวอักษร");
+  if (opts.companyTaxId && !isValidTaxId(opts.companyTaxId)) throw new Error("COMPANY_TAX_ID ไม่ใช่เลขประจำตัวผู้เสียภาษีที่ถูกต้อง");
+  const initial: Record<string, unknown> = {
+    ...DEFAULT_SETTINGS,
+    ...(opts.companyTaxId ? { "company.tax_id": normalizeTaxId(opts.companyTaxId) } : {}),
+    ...(opts.companyName?.trim() ? { "company.name": opts.companyName.trim() } : {}),
+  };
 
   return prisma.$transaction(async (tx) => {
     let adminCreated = false;
@@ -39,7 +49,7 @@ export async function seed(prisma: PrismaClient, opts: SeedOptions): Promise<See
     }
 
     const settingsCreated: string[] = [];
-    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    for (const [key, value] of Object.entries(initial)) {
       const found = await tx.setting.findUnique({ where: { key } });
       if (found) continue;
       await tx.setting.create({ data: { key, value: value as never } });

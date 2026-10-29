@@ -18,6 +18,7 @@ erDiagram
   users ||--o{ user_roles : has
   users ||--o{ refresh_tokens : owns
   users ||--o{ documents : uploads
+  users ||--o{ documents : verifies
   vendors ||--o{ documents : issues
   documents ||--o{ document_extractions : "extracted as"
   documents ||--o{ document_status_history : "moves through"
@@ -28,8 +29,8 @@ erDiagram
   user_roles { uuid user_id PK; Role role PK }
   refresh_tokens { uuid id PK; text token_hash UK; uuid family_id; timestamptz expires_at; timestamptz used_at; timestamptz revoked_at }
   vendors { uuid id PK; char13 tax_id; char5 branch_code; text name }
-  documents { uuid id PK; text doc_no UK; DocumentStatus status; char64 sha256; text storage_key UK; int version; numeric grand_total; numeric wht_base; numeric net_payable }
-  document_extractions { uuid id PK; text provider; text model_version; numeric confidence; jsonb raw; jsonb items }
+  documents { uuid id PK; text doc_no UK; DocumentStatus status; char64 sha256; text storage_key UK; int version; numeric grand_total; numeric wht_base; numeric net_payable; jsonb data; jsonb field_meta; jsonb validation_issues; uuid verified_by FK }
+  document_extractions { uuid id PK; text provider; text model_version; numeric confidence; jsonb raw; jsonb items; int duration_ms; text error }
   document_status_history { bigint id PK; DocumentStatus from_status; DocumentStatus to_status; ActorType actor_type; text reason }
   settings { text key PK; jsonb value }
   erp_sync_attempts { uuid id PK; text adapter; int attempt; text status; text transaction_id }
@@ -45,9 +46,9 @@ erDiagram
 | `refresh_tokens` | refresh token แบบหมุนเวียน | เก็บเฉพาะ hash<br>`family_id` ใช้ revoke ทั้งชุดเมื่อพบการใช้ token ซ้ำ (`used_at` มีค่าแล้ว) |
 | `vendors` | ทะเบียนผู้ขาย | `(tax_id, branch_code)` unique<br>`tax_id` ต้องเป็นตัวเลข 13 หลัก (CHECK)<br>สาขาสำนักงานใหญ่ = `00000` |
 | `documents` | เอกสารหนึ่งฉบับ = หนึ่งไฟล์ | ดูหัวข้อ "documents" ด้านล่าง |
-| `document_extractions` | ผลอ่านจาก AI provider แต่ละรอบ | เก็บ `raw` ไว้ตรวจย้อนหลัง<br>`items` เป็น JSONB (ลำดับ, รายการ, จำนวน, ราคาต่อหน่วย, ภาษี, ยอด, bbox, confidence) |
+| `document_extractions` | ผลอ่านจาก AI provider แต่ละรอบ (รวมรอบที่ล้มเหลว) | เก็บ `raw` ไว้ตรวจย้อนหลัง<br>`items` เป็น JSONB (ลำดับ, รายการ, จำนวน, ราคาต่อหน่วย, ภาษี, ยอด, bbox, confidence) เป็นค่าที่ AI อ่าน แก้ไม่ได้<br>`duration_ms` เวลาที่ใช้อ่าน (KPI <30 วินาที), `error` เหตุผลเมื่อรอบนั้นไม่สำเร็จ |
 | `document_status_history` | ประวัติการเปลี่ยนสถานะ | เขียนใน transaction เดียวกับการเปลี่ยนสถานะ<br>`actor_type` = USER/SYSTEM<br>การปฏิเสธต้องมี `reason` |
-| `settings` | การตั้งค่าที่ Admin แก้ได้ | ค่าเริ่มต้นจาก seed: `risk.confidence_threshold = 0.85`, `risk.high_amount_threshold = null` (รอฝ่ายบัญชี)<br>seed ไม่เขียนทับค่าที่มีอยู่แล้ว |
+| `settings` | การตั้งค่าที่ Admin แก้ได้ | ค่าเริ่มต้นจาก seed: `risk.confidence_threshold = 0.85`, `risk.high_amount_threshold = null` (รอฝ่ายบัญชี), `company.tax_id` / `company.name` (จาก `COMPANY_TAX_ID` / `COMPANY_NAME` หรือ null)<br>seed ไม่เขียนทับค่าที่มีอยู่แล้ว |
 | `erp_sync_attempts` | ประวัติการส่งเข้า ERP | สร้างโครงไว้สำหรับ Phase 3 |
 | `audit_events` | audit trail | ดูหัวข้อ "audit_events" ด้านล่าง |
 
@@ -64,7 +65,15 @@ erDiagram
   - ชั้นที่ 2: `wht_base`, `wht_rate`, `wht_amount`, `net_payable`
   - **`wht_base` แยกจาก `vat_base`** เพราะใบเดียวอาจมีทั้งสินค้าที่ไม่ถูกหักและบริการที่ถูกหัก
 - **`provider` / `model_version`** บันทึกว่า AI ตัวไหนอ่านเอกสารนี้ ใช้เทียบความแม่นยำเมื่อเปลี่ยน model
-- **`risk_flags`** (JSONB) เหตุผลที่เป็นเคสเสี่ยง จะใช้ตั้งแต่ Phase 2
+- **`risk_flags`** (JSONB) ผลประเมินความเสี่ยงตอนยืนยัน (รหัสกฎ, ข้อความ, ค่าที่เข้าเกณฑ์, ค่าเกณฑ์ ณ เวลาประเมิน) — แก้เกณฑ์ภายหลังไม่เปลี่ยนค่าที่เก็บแล้ว
+- **`data`** (JSONB) ข้อมูลที่ตรวจ/แก้ได้ทั้งชุดเป็นสตริง ตามรูป `DocumentData` ใน `packages/core/src/validation.ts` (หัวเอกสาร + `items`)
+  - เก็บเป็นสตริงเพราะระหว่างแก้อาจมีค่าที่ยังผิดรูปแบบ (เช่น `7OO.00`) ซึ่ง column typed เก็บไม่ได้
+  - column typed (`invoice_no`, `invoice_date`, `grand_total`, `vendor_tax_id` ฯลฯ) คัดลอกจาก `data` เฉพาะค่าที่ถูกรูปแบบ ใช้กับคิว การค้นหา และ Phase 3
+- **`field_meta`** (JSONB) ราย field: ความมั่นใจ, ตำแหน่ง (`bbox` พิกัดสัดส่วนของหน้า) และค่าที่ AI อ่านได้ ใช้ไฮไลต์บนหน้าตรวจและบอกว่า field ไหนถูกแก้
+- **`validation_issues`** (JSONB) ผลตรวจล่าสุด (`code`, `severity`, `message`, `fields`) คำนวณใหม่ทุกครั้งที่บันทึก
+- **`vendor_tax_id` / `vendor_branch` / `vendor_name` / `buyer_branch`** ค่าจากเอกสาร (ส่วน `vendor_id` ผูกกับทะเบียนตอนยืนยัน)
+- **`verified_by` / `verified_at`** ผู้ยืนยันและเวลา ใช้ตรวจการแยกหน้าที่ (ผู้ยืนยันอนุมัติเองไม่ได้)
+- **`(vendor_id, invoice_no)`** มี partial unique index `documents_vendor_invoice_confirmed_key` เฉพาะสถานะที่ยืนยันแล้ว (`VERIFIED` ขึ้นไป ยกเว้น `REJECTED`) กันเลขที่ใบแจ้งหนี้ซ้ำเมื่อยืนยันพร้อมกัน
 
 ### audit_events
 - **append-only:**
@@ -77,6 +86,7 @@ erDiagram
 
 - `20261029043336_init`: ตารางทั้งหมด, sequence, สิทธิ์ของ `sdes_app`, trigger ของ audit, partial unique index และ CHECK
 - `20261029050000_app_role_hardening`: `sdes_app` เข้าถึง `_prisma_migrations` ไม่ได้
+- `20261029094400_phase2_review_data`: column สำหรับการตรวจแก้ (`data`, `field_meta`, `validation_issues`, ข้อมูลผู้ขาย/ผู้ซื้อ, ผู้ยืนยัน), `duration_ms`/`error` ของ `document_extractions` และ partial unique index เลขที่ใบแจ้งหนี้
 
 **คำสั่ง (ใน `Service/`):**
 - `pnpm --filter @sdes/db migrate:dev` สร้าง migration ใหม่ (dev)
