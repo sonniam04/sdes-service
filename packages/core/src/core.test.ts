@@ -3,6 +3,7 @@ import {
   ACTIONS,
   DOCUMENT_STATUSES,
   FakeExtractionProvider,
+  HEADER_FIELDS,
   PERMISSIONS,
   REDACTED,
   ROLES,
@@ -11,6 +12,7 @@ import {
   assertTransition,
   can,
   canTransition,
+  parseExtractionResult,
   redact,
   type Action,
   type Actor,
@@ -162,5 +164,13 @@ describe("redact (spec audit-trail)", () => {
   it("ไม่แตะยอดเงินและค่าที่ไม่ใช่ string", () => {
     const input = { grand_total: "48,150.00", qty: 6, ok: true, at: new Date(0), nothing: null };
     expect(redact(input)).toEqual(input);
+  });
+});
+
+describe("FakeExtractionProvider", () => {
+  it("FakeExtractionProvider คืนผลที่ผ่าน schema และมี field ใหม่ครบ", async () => {
+    const r = await new FakeExtractionProvider().extract();
+    expect(() => parseExtractionResult(r)).not.toThrow();
+    expect(Object.keys(r.header)).toEqual(HEADER_FIELDS);
   });
 });
