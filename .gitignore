@@ -29,3 +29,10 @@ obj/
 Thumbs.db
 .vscode/
 .idea/
+
+# Prisma client ที่ generate
+packages/db/src/generated/
+
+# ข้อมูลผู้ใช้ load test (รหัสผ่าน)
+load/.load-user.env
+load/.last-run

@@ -1,0 +1,18 @@
+import "reflect-metadata";
+import { writeFileSync } from "node:fs";
+import { NestFactory } from "@nestjs/core";
+import { WorkerModule } from "./worker.module.js";
+
+const READY_FILE = "/tmp/worker-ready";
+
+async function bootstrap() {
+  const app = await NestFactory.createApplicationContext(WorkerModule);
+  app.enableShutdownHooks();
+  // heartbeat ให้ healthcheck ของ docker compose และทำให้ process ไม่จบเอง
+  // (เมื่อมี BullMQ worker ใน task 6.5 การเชื่อมต่อ Redis จะค้าง event loop ไว้อยู่แล้ว)
+  const beat = () => writeFileSync(READY_FILE, new Date().toISOString());
+  beat();
+  const timer = setInterval(beat, 15_000);
+  process.once("SIGTERM", () => clearInterval(timer));
+}
+void bootstrap();
