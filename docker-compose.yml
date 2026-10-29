@@ -16,6 +16,7 @@ x-app-env: &app-env
 
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -33,6 +34,7 @@ services:
       retries: 20
 
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     ports: ["${REDIS_HOST_PORT:-6379}:6379"]
@@ -46,6 +48,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
 
   seaweedfs:
+    restart: unless-stopped
     image: chrislusf/seaweedfs:latest
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -64,6 +67,7 @@ services:
       retries: 30
 
   clamav:
+    restart: unless-stopped
     image: clamav/clamav:stable
     ports: ["${CLAMD_HOST_PORT:-3310}:3310"]
     volumes: [clamdb:/var/lib/clamav]
@@ -75,6 +79,7 @@ services:
       start_period: 120s
 
   api:
+    restart: unless-stopped
     build: { context: ., args: { APP: api } }
     environment:
       <<: *app-env
@@ -92,6 +97,7 @@ services:
       retries: 12
 
   worker:
+    restart: unless-stopped
     build: { context: ., args: { APP: worker } }
     environment: *app-env
     depends_on:

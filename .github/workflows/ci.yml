@@ -24,6 +24,7 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
     env:
+      DATABASE_OWNER_URL: postgresql://sdes_owner:ci-owner@127.0.0.1:5433/sdes
       POSTGRES_OWNER_PASSWORD: ci-owner
       POSTGRES_APP_PASSWORD: ci-app
       REDIS_PASSWORD: ""
@@ -37,6 +38,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @sdes/db migrate:deploy
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

@@ -12,7 +12,7 @@ const env = (k: string, fallback?: string) => {
   return v;
 };
 
-const hostPort = (key: string, def: string) => `localhost:${process.env[key] ?? def}`;
+const hostPort = (key: string, def: string) => `127.0.0.1:${process.env[key] ?? def}`;
 
 export function loadConfig() {
   const db = env("POSTGRES_DB", "sdes");
@@ -32,7 +32,7 @@ export function loadConfig() {
       sse: env("S3_SSE", "false") === "true",
     },
     clamd: {
-      host: env("CLAMD_HOST", "localhost"),
+      host: env("CLAMD_HOST", "127.0.0.1"),
       port: Number(process.env.CLAMD_PORT ?? process.env.CLAMD_HOST_PORT ?? "3310"),
     },
   };
