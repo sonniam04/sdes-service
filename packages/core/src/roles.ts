@@ -1,0 +1,47 @@
+// Permission matrix ตาม spec user-access — แหล่งความจริงเดียวของทั้ง api และ worker
+export const ROLES = ["AP_CLERK", "AP_LEAD", "FINANCE_EXEC", "SYS_ADMIN"] as const;
+export type Role = (typeof ROLES)[number];
+
+export const ACTIONS = [
+  "document.upload",
+  "document.view",
+  "document.view_file",
+  "document.edit",
+  "document.retry",
+  "document.verify",
+  "document.approve",
+  "report.view",
+  "audit.view_all",
+  "user.manage",
+  "settings.manage",
+  "erp.configure",
+  "apikey.manage",
+  "sync.resend",
+] as const;
+export type Action = (typeof ACTIONS)[number];
+
+const CLERK: Action[] = [
+  "document.upload",
+  "document.view",
+  "document.view_file",
+  "document.edit",
+  "document.retry",
+  "document.verify",
+];
+
+export const PERMISSIONS: Record<Role, readonly Action[]> = {
+  AP_CLERK: CLERK,
+  AP_LEAD: [...CLERK, "document.approve"],
+  FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all"],
+  // ผู้ดูแลระบบไม่ได้สิทธิ์งานบัญชีโดยอัตโนมัติ (แยกหน้าที่)
+  SYS_ADMIN: ["user.manage", "settings.manage", "erp.configure", "apikey.manage", "audit.view_all", "sync.resend"],
+};
+
+/** ผู้ใช้หลาย role ได้สิทธิ์รวมของทุก role */
+export function can(roles: readonly Role[], action: Action): boolean {
+  return roles.some((r) => PERMISSIONS[r].includes(action));
+}
+
+export function isRole(value: string): value is Role {
+  return (ROLES as readonly string[]).includes(value);
+}
