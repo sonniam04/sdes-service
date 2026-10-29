@@ -30,6 +30,8 @@ jobs:
       REDIS_PASSWORD: ""
       S3_ACCESS_KEY: ci
       S3_SECRET_KEY: ci-secret
+      JWT_SECRET: ci-only-jwt-secret-not-used-anywhere-else
+      COOKIE_SECURE: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -1,4 +1,5 @@
 import { Controller, Get, HttpStatus, Inject, Res } from "@nestjs/common";
+import { Public } from "../auth/decorators.js";
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 import { HEALTH_CHECKS, type HealthCheck } from "./checks.js";
@@ -6,6 +7,7 @@ import { HEALTH_CHECKS, type HealthCheck } from "./checks.js";
 type CheckResult = { name: string; ok: boolean; error?: string };
 
 @ApiTags("system")
+@Public()
 @Controller("health")
 export class HealthController {
   constructor(@Inject(HEALTH_CHECKS) private readonly checks: HealthCheck[]) {}

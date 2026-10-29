@@ -3,19 +3,14 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppModule } from "../src/app.module.js";
+import { configureApp } from "../src/bootstrap.js";
 import { HEALTH_CHECKS, type HealthCheck } from "../src/health/checks.js";
-import { APP_CONFIG } from "../src/config.js";
-import { setupSwagger } from "../src/swagger.js";
+import "./test-db.js";
 
 async function boot(checks: HealthCheck[]) {
-  const mod = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(APP_CONFIG)
-    .useValue({})
-    .overrideProvider(HEALTH_CHECKS)
-    .useValue(checks)
-    .compile();
-  const app = mod.createNestApplication();
-  setupSwagger(app);
+  process.env.JWT_SECRET ??= "test-secret-for-health-check-only";
+  const mod = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(HEALTH_CHECKS).useValue(checks).compile();
+  const app = configureApp(mod.createNestApplication());
   await app.init();
   return app;
 }
@@ -30,7 +25,7 @@ describe("GET /health", () => {
     app = undefined;
   });
 
-  it("ทุกบริการพร้อม → 200", async () => {
+  it("ทุกบริการพร้อม → 200 โดยไม่ต้องล็อกอิน", async () => {
     app = await boot([ok("database"), ok("redis"), ok("storage"), ok("virus-scanner")]);
     const res = await request(app.getHttpServer()).get("/health").expect(200);
     expect(res.body.status).toBe("ok");
@@ -43,9 +38,9 @@ describe("GET /health", () => {
     expect(res.body.checks.find((c: { name: string }) => c.name === "virus-scanner")).toMatchObject({ ok: false });
   });
 
-  it("Swagger JSON มี path /health", async () => {
+  it("Swagger JSON มี path /health และ /auth/login", async () => {
     app = await boot([ok("database")]);
     const res = await request(app.getHttpServer()).get("/docs-json").expect(200);
-    expect(Object.keys(res.body.paths)).toContain("/health");
+    expect(Object.keys(res.body.paths)).toEqual(expect.arrayContaining(["/health", "/auth/login"]));
   });
 });

@@ -35,6 +35,14 @@ export function loadConfig() {
       host: env("CLAMD_HOST", "127.0.0.1"),
       port: Number(process.env.CLAMD_PORT ?? process.env.CLAMD_HOST_PORT ?? "3310"),
     },
+    auth: {
+      jwtSecret: env("JWT_SECRET"),
+      accessTtlSeconds: 15 * 60,
+      refreshTtlSeconds: 8 * 60 * 60,
+      cookieSecure: env("COOKIE_SECURE", "true") === "true",
+      maxFailedLogins: 5,
+      lockMinutes: 15,
+    },
   };
 }
 

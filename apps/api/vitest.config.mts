@@ -11,5 +11,13 @@ export default defineConfig({
       "@sdes/db": fileURLToPath(new URL("../../packages/db/src/index.ts", import.meta.url)),
     },
   },
-  test: { include: ["src/**/*.test.ts", "test/**/*.e2e.ts"], environment: "node" },
+  test: {
+    include: ["src/**/*.test.ts", "test/**/*.e2e.ts"],
+    environment: "node",
+    globalSetup: ["./test/global-setup.ts"],
+    // ไฟล์ e2e ใช้ฐานทดสอบเดียวกัน จึงรันทีละไฟล์
+    fileParallelism: false,
+    testTimeout: 30_000,
+    hookTimeout: 60_000,
+  },
 });
