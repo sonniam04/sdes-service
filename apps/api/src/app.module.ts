@@ -20,6 +20,8 @@ import { QueueService } from "./documents/queue.service.js";
 import { ScannerService } from "./documents/scanner.service.js";
 import { StatusGateway } from "./documents/status.gateway.js";
 import { StorageService } from "./documents/storage.service.js";
+import { ReviewService } from "./documents/review.service.js";
+import { SettingsController } from "./settings/settings.controller.js";
 
 @Module({
   imports: [
@@ -34,10 +36,11 @@ import { StorageService } from "./documents/storage.service.js";
       }),
     }),
   ],
-  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController],
+  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController],
   providers: [
     { provide: HEALTH_CHECKS, useFactory: (cfg: AppConfig) => buildHealthChecks(cfg), inject: [APP_CONFIG] },
     AuditService,
+    ReviewService,
     TokenService,
     AuthService,
     UsersService,

@@ -8,6 +8,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { Request } from "express";
+import sharp from "sharp";
 import { DOCUMENT_STATUSES, TransitionError, type Actor, type DocumentStatus } from "@sdes/core";
 import { Prisma, StaleDocumentError, transitionDocument, type PrismaClient } from "@sdes/db";
 import { AuditService } from "../audit/audit.service.js";
@@ -217,6 +218,23 @@ export class DocumentsService {
       this.audit.record(tx, { actor: { kind: "user", userId: user.userId }, action: "document.file_viewed", entityType: "document", entityId: id, ip }),
     );
     return { url, expiresIn: FILE_URL_TTL_SECONDS, sha256: d.sha256 };
+  }
+
+  /** ไฟล์ต้นฉบับสำหรับตัวแสดงเอกสาร: PDF/JPG/PNG ส่งตามเดิม, TIFF ส่งเป็น PNG ทีละหน้า */
+  async fileContent(id: string, page: number | undefined, user: Principal, ip?: string) {
+    const d = await this.prisma.document.findUnique({ where: { id }, select: { storageKey: true, mimeType: true } });
+    if (!d) throw new NotFoundException("ไม่พบเอกสาร");
+    const original = await this.storage.getOriginal(d.storageKey);
+    // บันทึกการเปิดครั้งเดียวต่อการเปิดเอกสาร (หน้าแรก) ไม่ใช่ทุกหน้า
+    if (!page || page === 1) {
+      await this.prisma.$transaction((tx) =>
+        this.audit.record(tx, { actor: { kind: "user", userId: user.userId }, action: "document.file_viewed", entityType: "document", entityId: id, ip }),
+      );
+    }
+    if (d.mimeType !== "image/tiff") return { contentType: d.mimeType, body: original };
+    const pageCount = (await sharp(original).metadata()).pages ?? 1;
+    const index = Math.min(Math.max((page ?? 1) - 1, 0), pageCount - 1);
+    return { contentType: "image/png", body: await sharp(original, { page: index }).png().toBuffer(), pageCount };
   }
 
   /** "อ่านใหม่" สำหรับเอกสาร FAILED โดยไม่ต้องอัปโหลดใหม่ */

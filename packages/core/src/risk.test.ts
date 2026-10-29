@@ -60,6 +60,7 @@ describe("assessRisk (spec risk-assessment)", () => {
     ["header.vatRate", true],
     ["items[3].unitPrice", true],
     ["items", true],
+    ["items[2]", true],
     ["header.vendorName", false],
     ["header.invoiceDate", false],
     ["items[0].description", false],

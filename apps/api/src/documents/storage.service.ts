@@ -54,6 +54,12 @@ export class StorageService implements OnModuleInit {
     );
   }
 
+  /** อ่านไฟล์ต้นฉบับทั้งไฟล์ (ไม่เกิน 20 MB) — ใช้ส่งให้ตัวแสดงเอกสารผ่าน API */
+  async getOriginal(key: string): Promise<Buffer> {
+    const obj = await this.s3.send(new GetObjectCommand({ Bucket: this.cfg.s3.bucket, Key: key }));
+    return Buffer.from(await obj.Body!.transformToByteArray());
+  }
+
   fileUrl(key: string, fileName: string) {
     return getSignedUrl(
       this.s3,

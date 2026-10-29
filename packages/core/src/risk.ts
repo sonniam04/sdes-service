@@ -37,7 +37,8 @@ const ITEM_MONEY = new Set(["quantity", "unitPrice", "discount", "vat", "amount"
 
 /** field ที่เป็นยอดเงิน/ตัวเลขที่มีผลต่อยอด — ใช้ตัดสิน "มีการแก้ยอดเงิน" */
 export function isMoneyField(path: FieldPath): boolean {
-  if (path === "items") return true;
+  // ทั้งตาราง หรือทั้งแถวที่เพิ่ม/ลบ
+  if (path === "items" || /^items\[\d+\]$/.test(path)) return true;
   const header = /^header\.(\w+)$/.exec(path);
   if (header) return HEADER_MONEY.has(header[1]!);
   const item = /^items\[\d+\]\.(\w+)$/.exec(path);
