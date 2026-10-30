@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SecretKeyError, decryptSecret, encryptSecret, loadSecretKey } from "./secrets.js";
 
 const key = randomBytes(32);
@@ -26,7 +26,13 @@ describe("ERP secret encryption (task 2.2)", () => {
 
   it("กุญแจไม่มีหรือผิดขนาดหยุดพร้อมข้อความ", () => {
     expect(() => loadSecretKey("")).toThrow(SecretKeyError);
-    expect(() => loadSecretKey(undefined)).toThrow(/ERP_SECRET_KEY/);
+    // ไม่ส่งค่า = อ่านจาก env — ล้างไว้ เพราะ CI ตั้ง ERP_SECRET_KEY ให้ integration test
+    vi.stubEnv("ERP_SECRET_KEY", undefined);
+    try {
+      expect(() => loadSecretKey()).toThrow(/ERP_SECRET_KEY/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
     expect(() => loadSecretKey("change-me")).toThrow(/ERP_SECRET_KEY/);
     expect(() => loadSecretKey("short-key")).toThrow(/24 ตัวอักษร/);
   });
