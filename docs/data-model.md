@@ -17,6 +17,7 @@
 erDiagram
   users ||--o{ user_roles : has
   users ||--o{ refresh_tokens : owns
+  users ||--o| api_keys : "service account of"
   users ||--o{ documents : uploads
   users ||--o{ documents : verifies
   vendors ||--o{ documents : issues
@@ -35,6 +36,8 @@ erDiagram
   settings { text key PK; jsonb value }
   erp_connections { int id PK; text adapter; text url; jsonb config; bytea secret_ciphertext; bool auto_sync; text tested_hash }
   erp_sync_attempts { uuid id PK; text adapter; int attempt; text status; text transaction_id; bool reused }
+  api_keys { uuid id PK; uuid service_user_id FK; text prefix; char key_hash; text_arr scopes; timestamptz expires_at; timestamptz revoked_at }
+  system_logs { bigint id PK; timestamptz created_at; text service; text level; text message; jsonb details }
   audit_events { bigint id PK; timestamptz occurred_at; ActorType actor_type; uuid actor_user_id; text action; text entity_type; text entity_id; text ip; jsonb details }
 ```
 
@@ -42,7 +45,7 @@ erDiagram
 
 | ตาราง | หน้าที่ | กติกาสำคัญ |
 |---|---|---|
-| `users` | บัญชีผู้ใช้ | `email` unique (เก็บเป็นตัวพิมพ์เล็ก)<br>`password_hash` เป็น argon2id<br>`external_subject` เว้นไว้สำหรับ OIDC/SSO<br>`must_change_password` บังคับเปลี่ยนรหัสชั่วคราว<br>`failed_login_count` + `locked_until` ใช้ล็อกบัญชี 15 นาทีเมื่อรหัสผิด 5 ครั้ง |
+| `users` | บัญชีผู้ใช้ | `email` unique (เก็บเป็นตัวพิมพ์เล็ก)<br>`password_hash` เป็น argon2id<br>`external_subject` เว้นไว้สำหรับ OIDC/SSO<br>`must_change_password` บังคับเปลี่ยนรหัสชั่วคราว<br>`failed_login_count` + `locked_until` ใช้ล็อกบัญชี 15 นาทีเมื่อรหัสผิด 5 ครั้ง<br>`kind` = `HUMAN` (คน) หรือ `SERVICE` (บัญชีของ API key: ไม่มี `password_hash` จึงล็อกอินไม่ได้ และไม่แสดงในหน้าจัดการผู้ใช้) |
 | `user_roles` | role ของผู้ใช้ (มีได้หลาย role) | role มี 4 ค่า: `AP_CLERK`, `AP_LEAD`, `FINANCE_EXEC`, `SYS_ADMIN`<br>ผู้ใช้ต้องมีอย่างน้อย 1 role (บังคับที่แอป) |
 | `refresh_tokens` | refresh token แบบหมุนเวียน | เก็บเฉพาะ hash<br>`family_id` ใช้ revoke ทั้งชุดเมื่อพบการใช้ token ซ้ำ (`used_at` มีค่าแล้ว) |
 | `vendors` | ทะเบียนผู้ขาย | `(tax_id, branch_code)` unique<br>`tax_id` ต้องเป็นตัวเลข 13 หลัก (CHECK)<br>สาขาสำนักงานใหญ่ = `00000`<br>`erp_partner_id` รหัสคู่ค้าใน ERP ที่จับคู่หรือสร้างไว้ ใช้ซ้ำในการส่งครั้งต่อไป |
@@ -53,6 +56,8 @@ erDiagram
 | `settings` | การตั้งค่าที่ Admin แก้ได้ | ค่าเริ่มต้นจาก seed: `risk.confidence_threshold = 0.85`, `risk.high_amount_threshold = null` (รอฝ่ายบัญชี), `company.tax_id` / `company.name` (จาก `COMPANY_TAX_ID` / `COMPANY_NAME` หรือ null)<br>seed ไม่เขียนทับค่าที่มีอยู่แล้ว |
 | `erp_sync_attempts` | ประวัติการส่งเข้า ERP หนึ่งแถวต่อการลองส่งหนึ่งครั้ง | `attempt` ครั้งที่, `adapter`, `status`, `transaction_id`, `error`, เวลาส่ง/ตอบ<br>`reused` = ERP มีรายการของเอกสารนี้อยู่แล้ว จึงใช้รายการเดิม (กันส่งซ้ำ) |
 | `audit_events` | audit trail | ดูหัวข้อ "audit_events" ด้านล่าง |
+| `api_keys` | API key ของระบบภายนอก (หนึ่ง key ต่อหนึ่งบัญชี `SERVICE`) | เก็บ `key_hash` (SHA-256 ของ key เต็ม) ไม่เก็บค่าเต็ม<br>`prefix` unique ใช้หาแถวและแสดงในหน้าจอ<br>`scopes` ต้องมีอย่างน้อยหนึ่งค่าจาก `document.upload`, `document.read` (CHECK)<br>`expires_at` บังคับ, `revoked_at`/`revoked_by` เมื่อเพิกถอน, `last_used_at` อัปเดตไม่เกินนาทีละครั้ง |
+| `system_logs` | log ระดับ `warn`/`error` ของ `api`/`worker` (CHECK ทั้งสองค่า) | ข้อมูลถูกปิดบังก่อนเก็บ<br>`sdes_app` เพิ่ม/อ่าน/ลบได้แต่แก้ไม่ได้<br>worker ลบแถวที่เก่ากว่า 30 วันวันละครั้ง |
 
 ### documents
 - **`doc_no`** มาจาก sequence `document_no_seq` รูปแบบ `DOC-000123`
