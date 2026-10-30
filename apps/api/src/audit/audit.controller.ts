@@ -54,7 +54,11 @@ export class AuditController {
     const rows = where ? await this.prisma.auditEvent.findMany({ where: { ...where, id: q.before ? { lt: BigInt(q.before) } : undefined }, orderBy: { id: "desc" }, take: limit }) : [];
     const names = await this.names(rows);
     return {
-      items: rows.map((r) => ({ ...r, id: r.id.toString(), actorName: r.actorUserId ? (names.get(r.actorUserId) ?? null) : null })),
+      items: rows.map((r) => {
+        const actor = r.actorUserId ? names.get(r.actorUserId) : undefined;
+        // actorKind = SERVICE คือการกระทำด้วย API key (spec api-keys "API key audit")
+        return { ...r, id: r.id.toString(), actorName: actor?.name ?? null, actorKind: actor?.kind ?? null };
+      }),
       nextBefore: rows.length === limit ? rows[rows.length - 1]!.id.toString() : null,
     };
   }
@@ -100,7 +104,7 @@ export class AuditController {
       res.write(
         rows
           .map((r) =>
-            [bangkok(r.occurredAt), r.id.toString(), r.actorUserId ? (names.get(r.actorUserId) ?? r.actorUserId) : "ระบบ", r.actorType, r.action, r.entityType, r.entityId, r.ip, r.details]
+            [bangkok(r.occurredAt), r.id.toString(), r.actorUserId ? (names.get(r.actorUserId)?.name ?? r.actorUserId) : "ระบบ", r.actorType, r.action, r.entityType, r.entityId, r.ip, r.details]
               .map(csvCell)
               .join(","),
           )
@@ -131,7 +135,7 @@ export class AuditController {
 
   private async names(rows: { actorUserId: string | null }[]) {
     const ids = [...new Set(rows.map((r) => r.actorUserId).filter((x): x is string => !!x))];
-    const users = ids.length ? await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, displayName: true } }) : [];
-    return new Map(users.map((u) => [u.id, u.displayName]));
+    const users = ids.length ? await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, displayName: true, kind: true } }) : [];
+    return new Map(users.map((u) => [u.id, { name: u.displayName, kind: u.kind }]));
   }
 }
