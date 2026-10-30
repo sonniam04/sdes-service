@@ -57,9 +57,14 @@ export class PermissionGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(ctx: ExecutionContext): boolean {
-    const action = this.reflector.getAllAndOverride<Action | undefined>(REQUIRED_PERMISSION, [ctx.getHandler(), ctx.getClass()]);
-    if (!action) return true;
+    const targets = [ctx.getHandler(), ctx.getClass()];
+    const action = this.reflector.getAllAndOverride<Action | undefined>(REQUIRED_PERMISSION, targets);
     const user: Principal | undefined = ctx.switchToHttp().getRequest().user;
+    if (!action) {
+      // route ที่ล็อกอินแล้วทุกคนใช้ได้ (เช่น /auth/me) เป็นของคนเท่านั้น — API key ใช้ได้เฉพาะ route ในขอบเขตของ key
+      if (user?.apiKey && !this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, targets)) throw new ForbiddenException("ไม่มีสิทธิ์ทำรายการนี้");
+      return true;
+    }
     const allowed = user?.apiKey ? user.apiKey.permissions.includes(action) : !!user && can(user.roles, action);
     if (!allowed) throw new ForbiddenException("ไม่มีสิทธิ์ทำรายการนี้");
     return true;

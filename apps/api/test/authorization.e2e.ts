@@ -103,6 +103,27 @@ describe.skipIf(!hasDatabase)("authorization regression (spec platform-security)
     expect(mismatches).toEqual([]);
   });
 
+  it("API key แต่ละขอบเขต: ได้เฉพาะ route ที่ขอบเขตนั้นให้ ที่เหลือ 403 รวมถึง route ที่ไม่กำหนด permission (spec api-keys)", async () => {
+    const admin = headers.SYS_ADMIN!;
+    const SCOPE_PERMISSIONS: Record<string, Action[]> = { "document.upload": ["document.upload", "document.view"], "document.read": ["document.view"] };
+    const mismatches: string[] = [];
+    for (const scopes of [["document.upload"], ["document.read"], ["document.read", "document.upload"]]) {
+      const r = await request(app.getHttpServer()).post("/admin/api-keys").set(admin).send({ name: `regression ${scopes.join("+")} ${randomUUID()}`, scopes });
+      expect(r.status).toBe(201);
+      const h = { Authorization: `Bearer ${r.body.key as string}` };
+      const allowed = new Set(scopes.flatMap((s) => SCOPE_PERMISSIONS[s]!));
+      for (const route of routes.filter((x) => !x.isPublic)) {
+        const path = route.path.replace(/:\w+/g, randomUUID());
+        const agent = request(app.getHttpServer());
+        const req = { GET: agent.get(path), POST: agent.post(path), PUT: agent.put(path), PATCH: agent.patch(path), DELETE: agent.delete(path) }[route.method as "GET"];
+        const res = await req.set(h).send(route.method === "GET" ? undefined : {});
+        const ok = !!route.permission && allowed.has(route.permission);
+        if (ok === (res.status === 403)) mismatches.push(`${scopes.join("+")} ${route.method} ${route.path} (${route.permission ?? "ไม่มี"}): ${res.status}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
   it("route ที่ไม่ได้ล็อกอินได้ 401 (ยกเว้น public)", async () => {
     const wrong: string[] = [];
     for (const r of routes.filter((x) => !x.isPublic)) {
