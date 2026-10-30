@@ -44,6 +44,10 @@ export function resolvePeriod(q: PeriodQuery) {
   return { from, to, start: `${from}-01`, end };
 }
 
+/** เอกสารที่อัปโหลดในช่วง (เวลาไทย) — เทียบ created_at ตรง ๆ ให้ planner ใช้สถิติได้ */
+const uploadedIn = (p: { start: string; end: string }) =>
+  Prisma.sql`d.created_at >= (${p.start}::timestamp AT TIME ZONE 'Asia/Bangkok') AND d.created_at < (${p.end}::timestamp AT TIME ZONE 'Asia/Bangkok')`;
+
 const csvCell = (v: unknown) => {
   const s = v === null || v === undefined ? "" : String(v);
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -113,7 +117,7 @@ export class ReportsController {
       this.process(p),
       this.prisma.$queryRaw<{ status: string; n: number }[]>`
         SELECT d.status::text AS status, count(*)::int AS n FROM documents d
-        WHERE (d.created_at AT TIME ZONE 'Asia/Bangkok') >= ${p.start}::timestamp AND (d.created_at AT TIME ZONE 'Asia/Bangkok') < ${p.end}::timestamp
+        WHERE ${uploadedIn(p)}
         GROUP BY 1`,
     ]);
     const statusCounts = Object.fromEntries(DOCUMENT_STATUSES.map((s) => [s, 0]));
@@ -121,27 +125,32 @@ export class ReportsController {
     return { period: { from: p.from, to: p.to }, months, totals: totals!, topVendors, process: { ...process, statusCounts } };
   }
 
-  /** ตัวชี้วัดตามวันที่อัปโหลด (เวลาไทย): เวลาเฉลี่ยแต่ละขั้นจากประวัติสถานะ, สัดส่วนที่ต้องอนุมัติ และที่ไม่ต้องแก้ค่าที่ AI อ่าน */
+  /**
+   * ตัวชี้วัดตามวันที่อัปโหลด (เวลาไทย): เวลาเฉลี่ยแต่ละขั้นจากประวัติสถานะ, สัดส่วนที่ต้องอนุมัติ และที่ไม่ต้องแก้ค่าที่ AI อ่าน
+   * join + group by ครั้งเดียว (subquery ต่อเอกสารช้าเกิน 1 วินาทีที่ 42,000 ฉบับ — task 4.4)
+   */
   private async process(p: ReturnType<typeof resolvePeriod>) {
-    const first = (status: string) =>
-      Prisma.sql`(SELECT min(h.created_at) FROM document_status_history h WHERE h.document_id = d.id AND h.to_status = ${status}::"DocumentStatus")`;
     const [r] = await this.prisma.$queryRaw<
       [{ uploaded: number; toExtracted: number | null; toVerified: number | null; toSynced: number | null; confirmed: number; approvals: number; noEdit: number }]
     >`
-      WITH ds AS (
-        SELECT d.id, d.created_at, ${first("EXTRACTED")} AS ex, ${first("VERIFIED")} AS ve, ${first("SYNCED")} AS sy,
-               EXISTS (SELECT 1 FROM document_status_history h WHERE h.document_id = d.id AND h.to_status = 'PENDING_APPROVAL') AS pa,
-               EXISTS (SELECT 1 FROM audit_events a WHERE a.entity_type = 'document' AND a.entity_id = d.id::text AND a.action = 'document.field_edited') AS edited
-        FROM documents d
-        WHERE (d.created_at AT TIME ZONE 'Asia/Bangkok') >= ${p.start}::timestamp AND (d.created_at AT TIME ZONE 'Asia/Bangkok') < ${p.end}::timestamp)
       SELECT count(*)::int AS uploaded,
-             avg(extract(epoch FROM ex - created_at))::float8 AS "toExtracted",
-             avg(extract(epoch FROM ve - ex))::float8 AS "toVerified",
-             avg(extract(epoch FROM sy - ve))::float8 AS "toSynced",
-             count(*) FILTER (WHERE ve IS NOT NULL)::int AS confirmed,
-             count(*) FILTER (WHERE ve IS NOT NULL AND pa)::int AS approvals,
-             count(*) FILTER (WHERE ve IS NOT NULL AND NOT edited)::int AS "noEdit"
-      FROM ds`;
+             avg(extract(epoch FROM x.ex - x.created_at))::float8 AS "toExtracted",
+             avg(extract(epoch FROM x.ve - x.ex))::float8 AS "toVerified",
+             avg(extract(epoch FROM x.sy - x.ve))::float8 AS "toSynced",
+             count(*) FILTER (WHERE x.ve IS NOT NULL)::int AS confirmed,
+             count(*) FILTER (WHERE x.ve IS NOT NULL AND x.pa)::int AS approvals,
+             count(*) FILTER (WHERE x.ve IS NOT NULL AND e.entity_id IS NULL)::int AS "noEdit"
+      FROM (
+        SELECT d.id, d.created_at,
+               min(h.created_at) FILTER (WHERE h.to_status = 'EXTRACTED') AS ex,
+               min(h.created_at) FILTER (WHERE h.to_status = 'VERIFIED') AS ve,
+               min(h.created_at) FILTER (WHERE h.to_status = 'SYNCED') AS sy,
+               coalesce(bool_or(h.to_status = 'PENDING_APPROVAL'), false) AS pa
+        FROM documents d LEFT JOIN document_status_history h ON h.document_id = d.id
+        WHERE ${uploadedIn(p)}
+        GROUP BY d.id, d.created_at) x
+      LEFT JOIN (SELECT DISTINCT entity_id FROM audit_events WHERE action = 'document.field_edited' AND entity_type = 'document') e
+        ON e.entity_id = x.id::text`;
     const round = (n: number | null) => (n === null ? null : Math.round(n));
     return {
       uploaded: r.uploaded,
