@@ -45,6 +45,13 @@ export function loadConfig() {
       maxFailedLogins: 5,
       lockMinutes: 15,
     },
+    /** spec platform-security "Rate limiting" — ต่อนาที; ปรับได้สำหรับชุดทดสอบที่ล็อกอินถี่จาก IP เดียว */
+    rateLimit: {
+      authPerMinute: Number(env("RATE_LIMIT_AUTH", "10")),
+      uploadPerMinute: Number(env("RATE_LIMIT_UPLOAD", "60")),
+    },
+    /** ค่า trust proxy ของ Express (เช่น "loopback, uniquelocal") เพื่อให้ได้ IP จริงของผู้ใช้หลัง reverse proxy */
+    trustProxy: process.env.TRUST_PROXY || null,
   };
 }
 

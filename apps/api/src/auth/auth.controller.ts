@@ -1,4 +1,6 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { SkipThrottle } from "@nestjs/throttler";
+import { AppThrottlerGuard, THROTTLE_UPLOAD } from "../security/throttle.js";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsEmail, IsString, MaxLength, MinLength } from "class-validator";
 import type { Request, Response } from "express";
@@ -35,6 +37,8 @@ export class AuthController {
   ) {}
 
   @Public()
+  @UseGuards(AppThrottlerGuard)
+  @SkipThrottle({ [THROTTLE_UPLOAD]: true })
   @Post("login")
   @HttpCode(200)
   @ApiOperation({ summary: "ล็อกอินด้วยอีเมลและรหัสผ่าน — refresh token อยู่ใน cookie HttpOnly" })
@@ -43,6 +47,8 @@ export class AuthController {
   }
 
   @Public()
+  @UseGuards(AppThrottlerGuard)
+  @SkipThrottle({ [THROTTLE_UPLOAD]: true })
   @Post("refresh")
   @HttpCode(200)
   @ApiOperation({ summary: "ขอ access token ใหม่ (refresh token ใช้ได้ครั้งเดียว)" })

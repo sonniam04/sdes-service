@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, Req, Res } from "@nestjs/common";
+import { Body, Controller, UseGuards, Get, HttpCode, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import { IsDateString, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
@@ -6,6 +6,8 @@ import type { Request, Response } from "express";
 import { CurrentUser, RequirePermission, type Principal } from "../auth/decorators.js";
 import { DocumentsService } from "./documents.service.js";
 import { ReviewService } from "./review.service.js";
+import { SkipThrottle } from "@nestjs/throttler";
+import { AppThrottlerGuard, THROTTLE_AUTH } from "../security/throttle.js";
 
 class ListQuery {
   /** คั่นด้วย comma เช่น EXTRACTED,FAILED */
@@ -35,6 +37,8 @@ export class DocumentsController {
 
   @Post()
   @RequirePermission("document.upload")
+  @UseGuards(AppThrottlerGuard)
+  @SkipThrottle({ [THROTTLE_AUTH]: true })
   @ApiConsumes("multipart/form-data")
   @ApiBody({ schema: { type: "object", properties: { files: { type: "array", items: { type: "string", format: "binary" } } } } })
   upload(@Req() req: Request, @CurrentUser() user: Principal) {

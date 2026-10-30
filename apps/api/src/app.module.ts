@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
+import { ThrottlerModule } from "@nestjs/throttler";
+import Redis from "ioredis";
+import { AppThrottlerGuard, RedisThrottlerStorage, THROTTLE_AUTH, THROTTLE_UPLOAD } from "./security/throttle.js";
 import { APP_CONFIG, type AppConfig } from "./config.js";
 import { ConfigModule } from "./config.module.js";
 import { PrismaModule } from "./prisma.js";
@@ -30,6 +33,16 @@ import { ErpService } from "./erp/erp.service.js";
   imports: [
     ConfigModule,
     PrismaModule,
+    ThrottlerModule.forRootAsync({
+      inject: [APP_CONFIG],
+      useFactory: (cfg: AppConfig) => ({
+        throttlers: [
+          { name: THROTTLE_AUTH, ttl: 60_000, limit: cfg.rateLimit.authPerMinute },
+          { name: THROTTLE_UPLOAD, ttl: 60_000, limit: cfg.rateLimit.uploadPerMinute },
+        ],
+        storage: new RedisThrottlerStorage(new Redis(cfg.redisUrl)),
+      }),
+    }),
     JwtModule.registerAsync({
       inject: [APP_CONFIG],
       useFactory: (cfg: AppConfig) => ({
@@ -45,6 +58,7 @@ import { ErpService } from "./erp/erp.service.js";
     AuditService,
     ReviewService,
     ErpService,
+    AppThrottlerGuard,
     TokenService,
     AuthService,
     UsersService,

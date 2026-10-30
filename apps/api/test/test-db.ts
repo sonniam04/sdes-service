@@ -42,4 +42,7 @@ export function useTestDatabase() {
   process.env.DATABASE_URL = urls.app;
   process.env.DATABASE_OWNER_URL = urls.owner;
   process.env.QUEUE_PREFIX = "sdes-test";
+  // test ล็อกอินถี่จาก IP เดียว — test ของ rate limit ตั้งค่าตาม spec เอง
+  process.env.RATE_LIMIT_AUTH ??= "100000";
+  process.env.RATE_LIMIT_UPLOAD ??= "100000";
 }
