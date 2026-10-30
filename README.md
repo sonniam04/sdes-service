@@ -133,6 +133,32 @@ function verify(req, rawBody, secret) {
 }
 ```
 
+## API key สำหรับระบบภายนอก
+
+System Admin สร้าง key ได้ที่หน้า `/admin/api-keys` ของเว็บ (ตั้งชื่อ, เลือกขอบเขต, อายุ 1–365 วัน ค่าเริ่มต้น 90) ค่า key แสดงครั้งเดียว ระบบเก็บแค่ hash
+- ขอบเขต `document.upload` = อัปโหลดและอ่านสถานะเอกสาร, `document.read` = อ่านรายการ/สถานะเท่านั้น — key แก้ข้อมูล อนุมัติ หรือเรียก endpoint ของผู้ดูแลไม่ได้
+- แต่ละ key มีบัญชีบริการของตัวเอง เอกสารที่อัปโหลดด้วย key จึงมีผู้อัปโหลดและ audit เป็นชื่อ key บัญชีนี้ล็อกอินด้วยรหัสผ่านไม่ได้และไม่อยู่ในหน้าจัดการผู้ใช้
+- ส่ง key ใน `Authorization: Bearer <key>` หรือ `X-API-Key: <key>`; key ผิด หมดอายุ หรือถูกเพิกถอน ได้ 401; rate limit การอัปโหลดนับต่อ key
+
+```bash
+# อัปโหลด (หลายไฟล์ได้: -F files=@a.pdf -F files=@b.pdf) — ผลรายไฟล์มีเลขเอกสารและสถานะ
+curl -sS -H "Authorization: Bearer $SDES_API_KEY" -F "files=@invoice.pdf" http://127.0.0.1:3000/documents
+# อ่านสถานะเอกสารที่เปลี่ยนตั้งแต่เวลาที่กำหนด
+curl -sS -H "X-API-Key: $SDES_API_KEY" "http://127.0.0.1:3000/documents?updatedSince=2026-10-30T00:00:00Z"
+```
+
+## System logs
+
+api และ worker เก็บ log ระดับ warning/error ลงตาราง `system_logs` (นอกจากพิมพ์ stdout ตามเดิม) ดูได้ที่หน้า `/admin/logs` ของเว็บ
+- ก่อนเก็บจะปิดบัง Authorization/Bearer token, API key, รหัสผ่านใน connection string และเลข 13 หลัก — อ้างถึงเอกสารด้วยเลข `DOC-xxxxxx` แทน
+- เก็บเป็นชุดทุก 2 วินาทีแบบไม่บล็อกงาน; ฐานข้อมูลล่ม = log ชุดนั้นหายแต่คำขอ/งานทำงานต่อ (ยังอยู่ใน stdout)
+- worker ลบ log ที่เก่ากว่า 30 วันวันละครั้ง (`sdes_app` แก้ log ไม่ได้)
+
+## ทะเบียนผู้ขายและรายงาน
+
+- `GET /vendors?q=&page=&pageSize=` และ `GET /vendors/:id` (AP Clerk, AP Lead) — ยอดรวมนับเฉพาะเอกสารที่ยืนยันแล้วขึ้นไปและไม่ถูกปฏิเสธ; `isNew` ใช้เงื่อนไขเดียวกับเหตุผลความเสี่ยง "ผู้ขายรายใหม่"
+- `GET /reports/summary?from=YYYY-MM&to=YYYY-MM` และ `/reports/summary/export` (Finance Exec, ไม่เกิน 24 เดือน) — ยอดเงินจัดตามวันที่ในใบกำกับ ตัวชี้วัดกระบวนการจัดตามวันที่อัปโหลด (เวลาไทย); ผลวัดเวลาตอบอยู่ใน `qa/complete-missing-features/reports-perf.md` ของ repo วางแผน (`load/reports-perf.mjs`)
+
 ## ความปลอดภัย
 
 - **Rate limit** เก็บตัวนับใน Redis (ใช้ร่วมกันได้หลาย instance) — ค่าตาม `RATE_LIMIT_*` ด้านบน นับต่อ IP จริงของผู้ใช้ผ่าน `TRUST_PROXY` (ดูตาราง Environment) — ชุด E2E ที่ล็อกอินหลายบัญชีจากเครื่องเดียวต้องเพิ่ม `RATE_LIMIT_AUTH`
