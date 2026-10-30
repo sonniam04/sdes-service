@@ -41,6 +41,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # ช่องโหว่ระดับ critical ใน dependency ที่ใช้งานจริงทำให้ CI ไม่ผ่าน (spec platform-security)
+      - run: pnpm test:scripts
+      - run: pnpm audit:gate
       - run: pnpm --filter @sdes/db migrate:deploy
       - run: pnpm lint
       - run: pnpm typecheck
