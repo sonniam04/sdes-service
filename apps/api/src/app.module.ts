@@ -30,6 +30,7 @@ import { OpsController } from "./erp/ops.controller.js";
 import { ErpService } from "./erp/erp.service.js";
 import { ApiKeysController } from "./api-keys/api-keys.controller.js";
 import { ApiKeysService } from "./api-keys/api-keys.service.js";
+import { SystemLogsController } from "./system-logs/system-logs.controller.js";
 
 @Module({
   imports: [
@@ -54,7 +55,7 @@ import { ApiKeysService } from "./api-keys/api-keys.service.js";
       }),
     }),
   ],
-  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController, ErpController, OpsController, ApiKeysController],
+  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController, ErpController, OpsController, ApiKeysController, SystemLogsController],
   providers: [
     { provide: HEALTH_CHECKS, useFactory: (cfg: AppConfig) => buildHealthChecks(cfg), inject: [APP_CONFIG] },
     AuditService,
