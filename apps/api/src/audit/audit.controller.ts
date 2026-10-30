@@ -59,6 +59,16 @@ export class AuditController {
     };
   }
 
+  /** ตัวเลือกของตัวกรองในหน้า Audit trail — Exec ไม่มีสิทธิ์อ่านรายชื่อผู้ใช้จาก /admin/users จึงให้ชื่อผ่านที่นี่ */
+  @Get("facets")
+  async facets() {
+    const [users, actions] = await Promise.all([
+      this.prisma.user.findMany({ select: { id: true, displayName: true }, orderBy: { displayName: "asc" } }),
+      this.prisma.auditEvent.groupBy({ by: ["action"], orderBy: { action: "asc" } }),
+    ]);
+    return { actors: users, actions: actions.map((a) => a.action) };
+  }
+
   /** CSV UTF-8 + BOM (เปิดใน Excel ภาษาไทยได้) ตามตัวกรองเดียวกับการค้นหา — stream ทีละชุด */
   @Get("export")
   async export(@Query() q: AuditFilter, @CurrentUser() user: Principal, @Req() req: Request, @Res() res: Response) {

@@ -92,8 +92,17 @@ describe.skipIf(!hasDatabase)("audit search + export (spec audit-trail)", () => 
     expect(ev.details).toMatchObject({ filters: { docNo: doc.docNo } });
   });
 
+  it("ตัวเลือกของตัวกรอง: ผู้ใช้ทุกคนและ action ที่มีใน audit (Exec อ่านได้)", async () => {
+    const r = await http().get("/audit-events/facets").set(exec).expect(200);
+    expect(r.body.actors).toContainEqual({ id: adminId, displayName: expect.any(String) });
+    expect(r.body.actors.every((a: object) => Object.keys(a).sort().join() === "displayName,id")).toBe(true);
+    expect(r.body.actions).toContain("document.field_edited");
+    expect([...r.body.actions].sort()).toEqual(r.body.actions);
+  });
+
   it("Clerk ค้นหาหรือส่งออกไม่ได้ (403)", async () => {
     await http().get("/audit-events").set(clerk).expect(403);
     await http().get("/audit-events/export").set(clerk).expect(403);
+    await http().get("/audit-events/facets").set(clerk).expect(403);
   });
 });
