@@ -12,3 +12,4 @@ export { projectDocumentData, loadReviewSettings, findDuplicateInvoice, CONFIRME
 export function createPrisma(url: string): PrismaClient {
   return new PrismaClient({ datasourceUrl: url });
 }
+export { DbLogger, SystemLogSink, maskLogText, purgeSystemLogs, SYSTEM_LOG_RETENTION_DAYS, type LogService, type LogLevel, type LogEntry, type SystemLogRow } from "./system-logs.js";
