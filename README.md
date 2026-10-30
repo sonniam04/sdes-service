@@ -4,10 +4,10 @@ Backend ของ SDES — Smart Document Extraction & ERP Sync Pipeline
 
 | ส่วน | หน้าที่ |
 |---|---|
-| `apps/api` | NestJS REST API + socket.io (`/ws`) — auth, ผู้ใช้, audit, อัปโหลดเอกสาร |
-| `apps/worker` | BullMQ worker อ่านข้อมูลเอกสาร (Phase 1 ใช้ `FakeExtractionProvider`) |
-| `packages/core` | กติกากลาง: role/สิทธิ์, lifecycle ของเอกสาร, redactor, ชื่อ queue/channel |
-| `packages/db` | Prisma schema, migration, seed, `transitionDocument`, `recordAudit` |
+| `apps/api` | NestJS REST API + socket.io (`/ws`) — auth, ผู้ใช้, audit, อัปโหลด/ตรวจ/อนุมัติเอกสาร, ตั้งค่า ERP, ติดตามคิว |
+| `apps/worker` | BullMQ worker: อ่านข้อมูลเอกสารด้วย AI (คิว `extract`) และส่งเข้า ERP (คิว `erp-sync`) |
+| `packages/core` | กติกากลาง: role/สิทธิ์, lifecycle ของเอกสาร, validation, payload และ adapter ของ ERP (Odoo, webhook) |
+| `packages/db` | Prisma schema, migration, seed, `transitionDocument`, `recordAudit`, เข้ารหัส secret ของ ERP |
 
 เอกสารประกอบ: [docs/data-model.md](docs/data-model.md) · Swagger ที่ `http://127.0.0.1:3000/docs` เมื่อรันแล้ว
 
@@ -76,6 +76,10 @@ Stack ตั้ง `restart: unless-stopped` ไว้ — บน WSL ถ้า 
 | `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` | key ของ provider ที่เลือก — ส่งให้เฉพาะ worker ไม่ส่งให้ api |
 | `EXTRACTION_MODEL`, `EXTRACTION_EFFORT`, `EXTRACTION_TIMEOUT_MS` | รุ่นโมเดล (ว่าง = `claude-opus-5-5` หรือ `gemini-3.8-flash`), ระดับ effort ของ Claude (`low`) และเวลาสูงสุดต่อคำขอ (120000 ms) |
 | `EXTRACTION_FIXTURE_HOST_DIR` | โฟลเดอร์ `<sha256>.json` ของ fixture provider (mount เข้า worker ที่ `/fixtures`) |
+| `ERP_SECRET_KEY` | กุญแจเข้ารหัส API key/webhook secret ของการเชื่อมต่อ ERP (AES-256-GCM) ส่งให้ api และ worker — base64 ของ 32 bytes หรือค่าสุ่มยาวอย่างน้อย 24 ตัว (ขั้นตอนสร้าง `.env` ด้านบนสุ่มให้แล้ว) |
+| `RATE_LIMIT_AUTH`, `RATE_LIMIT_UPLOAD` | จำนวนครั้งต่อนาที: login/refresh ต่อ IP (10) และอัปโหลดต่อผู้ใช้ (60) — เกินได้ 429 พร้อม `Retry-After` |
+| `TRUST_PROXY` | ตั้งเมื่ออยู่หลัง reverse proxy (เช่น `loopback, uniquelocal`) ให้ rate limit และ audit ได้ IP จริงของผู้ใช้ — ว่าง = ใช้ IP ที่ต่อเข้ามาตรง |
+| `ODOO_HOST_PORT`, `ODOO_DB_PASSWORD` | เฉพาะ profile `odoo` สำหรับ dev (ค่าเริ่มต้น 8069 / `odoo-dev-only`) |
 
 ## การอ่านเอกสารด้วย AI
 
@@ -94,6 +98,48 @@ Stack ตั้ง `restart: unless-stopped` ไว้ — บน WSL ถ้า 
 - TIFF ถูกแปลงเป็น PNG ทีละหน้าก่อนส่ง ภาพที่ใหญ่เกินถูกย่อ (ตำแหน่งที่อ่านได้เป็นพิกัดสัดส่วนของหน้า จึงไม่กระทบ)
 - **E2E/CI** ใช้ `EXTRACTION_PROVIDER=fixture` กับเฉลยของชุดทดสอบ จึงไม่เรียก API จริง
 
+## การส่งเข้า ERP
+
+เอกสารที่ยืนยันแล้ว (`VERIFIED` ที่ไม่มีความเสี่ยง) หรืออนุมัติแล้ว (`APPROVED`) ถูกส่งเข้า ERP เมื่อ **เปิดการส่งอัตโนมัติ** ที่หน้า `/admin/erp` ของเว็บ ซึ่งเปิดได้หลังทดสอบการเชื่อมต่อผ่านเท่านั้น การแก้การตั้งค่าใด ๆ จะปิดการส่งอัตโนมัติจนกว่าจะทดสอบผ่านอีกครั้ง เอกสารที่ส่งไม่สำเร็จ (`SYNC_FAILED`) System Admin ส่งใหม่ได้ที่หน้า `/admin/sync`
+
+- **Odoo:** สร้างใบแจ้งหนี้ผู้ขาย (vendor bill) **แบบร่าง** ไม่ post ให้ฝ่ายบัญชีตรวจใน Odoo ก่อน — รองรับ JSON-2 (Odoo 19 ขึ้นไป) และ JSON-RPC (17–18) กันส่งซ้ำด้วย `invoice_origin` = เลขเอกสาร SDES, หาคู่ค้าด้วย Tax ID แล้วสร้างใหม่ถ้าไม่มี, ข้อมูลหัก ณ ที่จ่ายอยู่ในหมายเหตุ และแนบไฟล์ต้นฉบับ
+- **Webhook:** `POST` JSON ไปยัง URL ที่ตั้ง ลงลายเซ็นด้วย secret — ปลายทางต้องตอบ 2xx พร้อม `{"transactionId": "..."}`
+- ส่งไม่สำเร็จชั่วคราว (เครือข่าย, 429, 5xx) ลองใหม่รวม 3 ครั้ง; ถูกปฏิเสธ (4xx) เป็น `SYNC_FAILED` ทันที ทุกครั้งที่ส่งเก็บใน `erp_sync_attempts`
+- API key/secret ถูกเข้ารหัสด้วย `ERP_SECRET_KEY` ไม่ถูกส่งกลับใน API, log หรือ audit — ถ้ากุญแจหาย ให้ใส่ API key ใหม่ในหน้าตั้งค่า (ข้อมูลเอกสารไม่กระทบ) และ production ต้องเก็บกุญแจใน secret manager
+
+### Odoo สำหรับพัฒนาและทดสอบ (profile `odoo`)
+
+```bash
+docker compose --profile odoo up -d --wait   # เพิ่ม odoo:19 + postgres ของ Odoo (RAM เพิ่มราว 1 GB)
+sh docker/odoo/setup.sh                       # Windows: wsl --cd "<path ของ Service>" sh docker/odoo/setup.sh
+```
+
+`setup.sh` สร้างฐาน `sdes_erp` (โมดูล `account` + `l10n_th`) และผู้ใช้ `sdes-integration` แล้วพิมพ์ **API key ใหม่** กับ id ของ journal ซื้อ, ภาษีซื้อ 7% และบัญชีค่าใช้จ่าย ให้นำไปใส่ในหน้า `/admin/erp` (URL `http://odoo:8069` เพราะ worker เรียกจากใน docker network) — API key แสดงครั้งเดียวและไม่ถูกเขียนลงไฟล์ รันซ้ำได้ (ได้ key ใหม่ทุกครั้ง) ดูใบแจ้งหนี้ที่ส่งเข้าไปได้ที่ `http://127.0.0.1:8069`
+
+### ตรวจลายเซ็น webhook ฝั่งปลายทาง
+
+Header ที่ส่งไป: `X-SDES-Timestamp` (unix วินาที), `X-SDES-Signature` (`sha256=` + HMAC-SHA256 ของ `<timestamp>.<body>`), `Idempotency-Key` (คงที่ต่อเอกสาร — ส่งซ้ำได้ค่าเดิม ปลายทางใช้กันสร้างซ้ำ)
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+// rawBody = body ที่ได้รับแบบยังไม่ parse (string/Buffer)
+function verify(req, rawBody, secret) {
+  const ts = req.headers["x-sdes-timestamp"];
+  if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return false; // กันการส่งซ้ำของคำขอเก่า
+  const expected = "sha256=" + createHmac("sha256", secret).update(`${ts}.${rawBody}`).digest("hex");
+  const got = String(req.headers["x-sdes-signature"] ?? "");
+  return got.length === expected.length && timingSafeEqual(Buffer.from(got), Buffer.from(expected));
+}
+```
+
+## ความปลอดภัย
+
+- **Rate limit** เก็บตัวนับใน Redis (ใช้ร่วมกันได้หลาย instance) — ค่าตาม `RATE_LIMIT_*` ด้านบน
+- **Security headers** ด้วย `helmet` ที่ api (หน้าเว็บตั้ง CSP เองใน `next.config.ts` ของ sdes-web)
+- **Dependency gate:** CI รัน `pnpm audit:gate` — ล้มเมื่อพบช่องโหว่ระดับ critical ใน dependency ที่ใช้งานจริง ยกเว้นรายการที่อยู่ใน `security/audit-exceptions.json` (ต้องมีเหตุผลและวันหมดอายุ; หมดอายุแล้ว CI ล้ม)
+- **Authorization regression test** (`apps/api/test/authorization.e2e.ts`) ไล่ทุก route: route ใหม่ที่ลืม `@RequirePermission` จะทำให้ test ล้มพร้อมชื่อ endpoint
+
 ## ทดสอบ
 
 ```bash
@@ -104,5 +150,6 @@ pnpm test        # core (unit) + db/api (integration) — ต้องเปิ�
 
 - integration test ของ api สร้างฐาน `sdes_test` ใหม่ทุกครั้ง และใช้ queue prefix `sdes-test` จึงไม่ปนกับข้อมูล dev
 - test การอัปโหลด (สแกนไวรัส + S3) รันเฉพาะเมื่อเข้าถึง SeaweedFS และ ClamAV ได้ — บน CI จะข้าม
+- test ของ adapter Odoo (`apps/api/test/odoo-adapter.e2e.ts`) รันเฉพาะเมื่อตั้ง `ODOO_TEST_URL` (`http://127.0.0.1:8069`), `ODOO_TEST_API_KEY`, `ODOO_TEST_JOURNAL_ID`, `ODOO_TEST_TAX_ID`, `ODOO_TEST_ACCOUNT_ID` จากผลของ `setup.sh` ใน environment ของ shell (ไม่ต้องใส่ใน `.env`) — ไม่ตั้ง = ข้าม
 - E2E ตลอดสายผ่านหน้าเว็บอยู่ใน `qa/e2e` ของ repo วางแผน (smart-document-extraction-erp-sync)
 - Load test การอัปโหลด: `node load/create-load-user.mjs` แล้วรัน `load/upload.k6.js` ด้วย k6 (ผลล่าสุดอยู่ใน `qa/phase1/load-upload.md`)
