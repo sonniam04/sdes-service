@@ -88,10 +88,12 @@ services:
     environment:
       <<: *app-env
       PORT: "3000"
-      # rate limit ต่อนาที (spec platform-security) และ IP จริงหลัง reverse proxy
+      # rate limit ต่อนาที (spec platform-security)
       RATE_LIMIT_AUTH: ${RATE_LIMIT_AUTH:-10}
       RATE_LIMIT_UPLOAD: ${RATE_LIMIT_UPLOAD:-60}
-      TRUST_PROXY: ${TRUST_PROXY:-}
+      # เว็บส่งต่อ /auth และ /api ผ่าน proxy ของ Next — ถ้าไม่เชื่อ X-Forwarded-For จาก proxy ทุกคนจะใช้ IP ของเว็บร่วมกัน
+      # และโดน rate limit ของ login/refresh พร้อมกัน (10 ครั้ง/นาทีรวมทั้งบริษัท)
+      TRUST_PROXY: ${TRUST_PROXY:-loopback, uniquelocal}
     ports: ["${API_PORT:-3000}:3000"]
     depends_on:
       postgres: { condition: service_healthy }

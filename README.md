@@ -78,7 +78,7 @@ Stack ตั้ง `restart: unless-stopped` ไว้ — บน WSL ถ้า 
 | `EXTRACTION_FIXTURE_HOST_DIR` | โฟลเดอร์ `<sha256>.json` ของ fixture provider (mount เข้า worker ที่ `/fixtures`) |
 | `ERP_SECRET_KEY` | กุญแจเข้ารหัส API key/webhook secret ของการเชื่อมต่อ ERP (AES-256-GCM) ส่งให้ api และ worker — base64 ของ 32 bytes หรือค่าสุ่มยาวอย่างน้อย 24 ตัว (ขั้นตอนสร้าง `.env` ด้านบนสุ่มให้แล้ว) |
 | `RATE_LIMIT_AUTH`, `RATE_LIMIT_UPLOAD` | จำนวนครั้งต่อนาที: login/refresh ต่อ IP (10) และอัปโหลดต่อผู้ใช้ (60) — เกินได้ 429 พร้อม `Retry-After` |
-| `TRUST_PROXY` | ตั้งเมื่ออยู่หลัง reverse proxy (เช่น `loopback, uniquelocal`) ให้ rate limit และ audit ได้ IP จริงของผู้ใช้ — ว่าง = ใช้ IP ที่ต่อเข้ามาตรง |
+| `TRUST_PROXY` | proxy ที่ api เชื่อ `X-Forwarded-For` (ค่าเริ่มต้นใน compose `loopback, uniquelocal`) — **ต้องมี** เพราะเว็บเรียก `/auth` และ `/api` ผ่าน proxy ของ Next ถ้าไม่ตั้ง ผู้ใช้ทุกคนจะใช้ IP ของเว็บร่วมกันและโดน rate limit ของ login/refresh พร้อมกัน production ให้ระบุ IP ของ proxy จริง และไม่เปิด port ของ api ให้เครื่องอื่นเรียกตรง (ไม่อย่างนั้นเครื่องใน LAN ปลอม header เพื่อเลี่ยง rate limit ได้) |
 | `ODOO_HOST_PORT`, `ODOO_DB_PASSWORD` | เฉพาะ profile `odoo` สำหรับ dev (ค่าเริ่มต้น 8069 / `odoo-dev-only`) |
 
 ## การอ่านเอกสารด้วย AI
@@ -135,7 +135,7 @@ function verify(req, rawBody, secret) {
 
 ## ความปลอดภัย
 
-- **Rate limit** เก็บตัวนับใน Redis (ใช้ร่วมกันได้หลาย instance) — ค่าตาม `RATE_LIMIT_*` ด้านบน
+- **Rate limit** เก็บตัวนับใน Redis (ใช้ร่วมกันได้หลาย instance) — ค่าตาม `RATE_LIMIT_*` ด้านบน นับต่อ IP จริงของผู้ใช้ผ่าน `TRUST_PROXY` (ดูตาราง Environment) — ชุด E2E ที่ล็อกอินหลายบัญชีจากเครื่องเดียวต้องเพิ่ม `RATE_LIMIT_AUTH`
 - **Security headers** ด้วย `helmet` ที่ api (หน้าเว็บตั้ง CSP เองใน `next.config.ts` ของ sdes-web)
 - **Dependency gate:** CI รัน `pnpm audit:gate` — ล้มเมื่อพบช่องโหว่ระดับ critical ใน dependency ที่ใช้งานจริง ยกเว้นรายการที่อยู่ใน `security/audit-exceptions.json` (ต้องมีเหตุผลและวันหมดอายุ; หมดอายุแล้ว CI ล้ม)
 - **Authorization regression test** (`apps/api/test/authorization.e2e.ts`) ไล่ทุก route: route ใหม่ที่ลืม `@RequirePermission` จะทำให้ test ล้มพร้อมชื่อ endpoint
