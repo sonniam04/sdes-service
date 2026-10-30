@@ -6,7 +6,7 @@ export { recordAudit, type AuditActor, type AuditInput, type Tx } from "./audit.
 export { transitionDocument, StaleDocumentError, type TransitionInput } from "./transitions.js";
 export { loadErpConnection, loadErpConnectionWithSecret, toErpConnection, connectionHash, ERP_CONNECTION_ID, type ErpConnection, type ErpConnectionOptions, type ErpAdapterName } from "./erp-connection.js";
 export { encryptSecret, decryptSecret, loadSecretKey, SecretKeyError, type EncryptedSecret } from "./secrets.js";
-export { projectDocumentData, loadReviewSettings, findDuplicateInvoice, CONFIRMED_STATUSES, type ReviewSettings } from "./review.js";
+export { projectDocumentData, loadReviewSettings, findDuplicateInvoice, CONFIRMED_STATUSES, ESTABLISHED_VENDOR_STATUSES, type ReviewSettings } from "./review.js";
 
 /** แอปเชื่อมต่อด้วย role sdes_app (ไม่ใช่ owner) — ส่ง url ของ DATABASE_URL */
 export function createPrisma(url: string): PrismaClient {

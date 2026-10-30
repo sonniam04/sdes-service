@@ -22,7 +22,7 @@ import {
   type RiskFlag,
 } from "@sdes/core";
 import {
-  CONFIRMED_STATUSES,
+  ESTABLISHED_VENDOR_STATUSES,
   Prisma,
   StaleDocumentError,
   findDuplicateInvoice,
@@ -154,7 +154,7 @@ export class ReviewService {
         const vendor = await upsertVendor(tx, data);
         const isNewVendor =
           (await tx.document.count({
-            where: { vendorId: vendor.id, id: { not: id }, status: { in: CONFIRMED_STATUSES.filter((s) => s !== "PENDING_APPROVAL") } },
+            where: { vendorId: vendor.id, id: { not: id }, status: { in: [...ESTABLISHED_VENDOR_STATUSES] } },
           })) === 0;
         const edited = await tx.auditEvent.findMany({
           where: { entityType: "document", entityId: id, action: FIELD_EDITED },

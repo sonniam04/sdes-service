@@ -18,6 +18,12 @@ type Db = Tx | PrismaClient;
 /** สถานะที่ถือว่ายืนยันแล้ว — ตรงกับ partial unique index documents_vendor_invoice_confirmed_key */
 export const CONFIRMED_STATUSES = ["VERIFIED", "PENDING_APPROVAL", "APPROVED", "SYNCING", "SYNCED", "SYNC_FAILED"] as const;
 
+/**
+ * ผู้ขายที่ "ไม่ใหม่" แล้ว = มีเอกสารในสถานะเหล่านี้อย่างน้อยหนึ่งฉบับ (ยืนยันผ่านโดยไม่ต้องอนุมัติ หรืออนุมัติแล้ว)
+ * ใช้ทั้งเหตุผลความเสี่ยง NEW_VENDOR และป้าย "ผู้ขายรายใหม่" ในทะเบียนผู้ขาย (spec vendor-directory)
+ */
+export const ESTABLISHED_VENDOR_STATUSES = CONFIRMED_STATUSES.filter((s) => s !== "PENDING_APPROVAL");
+
 const money = (v: string | null) => (v && MONEY_RE.test(v) ? new Prisma.Decimal(v) : null);
 const rate = (v: string | null) => (v && DECIMAL_RE.test(v) && Math.abs(Number(v)) < 1000 ? new Prisma.Decimal(v) : null);
 const taxId = (v: string | null) => (v && isValidTaxId(v) ? normalizeTaxId(v) : null);
