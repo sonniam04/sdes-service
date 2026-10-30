@@ -37,6 +37,12 @@ enum ActorType {
   SYSTEM
 }
 
+/// HUMAN = คนที่ล็อกอินด้วยรหัสผ่าน, SERVICE = บัญชีของ API key (ล็อกอินไม่ได้)
+enum UserKind {
+  HUMAN
+  SERVICE
+}
+
 model User {
   id                 String    @id @default(uuid()) @db.Uuid
   email              String    @unique
@@ -44,6 +50,7 @@ model User {
   passwordHash       String?   @map("password_hash")
   /// สำหรับ OIDC/SSO ภายหลัง (design D5)
   externalSubject    String?   @unique @map("external_subject")
+  kind               UserKind  @default(HUMAN)
   isActive           Boolean   @default(true) @map("is_active")
   mustChangePassword Boolean   @default(true) @map("must_change_password")
   failedLoginCount   Int       @default(0) @map("failed_login_count")
@@ -55,6 +62,7 @@ model User {
   refreshTokens     RefreshToken[]
   documents         Document[]     @relation("UploadedBy")
   verifiedDocuments Document[]     @relation("VerifiedBy")
+  apiKey            ApiKey?        @relation("ApiKeyServiceUser")
 
   @@map("users")
 }
@@ -276,3 +284,43 @@ model ErpConnection {
 
   @@map("erp_connections")
 }
+
+/// API key ของระบบภายนอก (spec api-keys, design D1–D2) — เก็บเฉพาะ hash
+model ApiKey {
+  id            String    @id @default(uuid()) @db.Uuid
+  /// บัญชีบริการที่ key ใช้เป็นผู้กระทำ
+  serviceUserId String    @unique @map("service_user_id") @db.Uuid
+  name          String
+  /// ส่วนต้นของ key (หลัง sdes_) ใช้หาแถวและแสดงในหน้าจอ
+  prefix        String    @unique
+  /// SHA-256 (hex) ของ key เต็ม
+  keyHash       String    @map("key_hash") @db.Char(64)
+  /// ขอบเขต: document.upload | document.read
+  scopes        String[]
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt    DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedById   String?   @map("revoked_by") @db.Uuid
+  createdById   String    @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  serviceUser User @relation("ApiKeyServiceUser", fields: [serviceUserId], references: [id], onDelete: Restrict)
+
+  @@map("api_keys")
+}
+
+/// log ระดับ warn/error ของ api/worker (spec system-logs, design D4) — เก็บ 30 วัน
+model SystemLog {
+  id        BigInt   @id @default(autoincrement())
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  service   String
+  level     String
+  context   String?
+  message   String
+  details   Json?
+
+  @@index([createdAt(sort: Desc)])
+  @@index([level, service, createdAt])
+  @@map("system_logs")
+}
+

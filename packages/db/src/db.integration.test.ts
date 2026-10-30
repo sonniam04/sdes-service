@@ -150,6 +150,37 @@ describe.skipIf(!hasDatabase)("database (integration)", () => {
       });
     });
 
+    describe("API keys และ system logs (task 1.2 ของ complete-missing-features)", () => {
+      it("migration เพิ่มตารางและ column ครบ", async () => {
+        const r = await pg.query(
+          `SELECT table_name || '.' || column_name AS c FROM information_schema.columns
+           WHERE (table_name, column_name) IN (('users','kind'),('api_keys','key_hash'),('api_keys','prefix'),('api_keys','scopes'),
+             ('api_keys','expires_at'),('api_keys','last_used_at'),('api_keys','revoked_at'),('api_keys','service_user_id'),
+             ('system_logs','service'),('system_logs','level'),('system_logs','context'),('system_logs','message'),('system_logs','details'))`,
+        );
+        expect(r.rowCount).toBe(13);
+      });
+
+      it("ผู้ใช้เดิมทุกคนเป็น HUMAN", async () => {
+        const r = await pg.query("SELECT count(*)::int AS n FROM users WHERE kind <> 'HUMAN' AND id NOT IN (SELECT service_user_id FROM api_keys)");
+        expect(r.rows[0].n).toBe(0);
+        const d = await pg.query("SELECT column_default FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'kind'");
+        expect(d.rows[0].column_default).toContain("HUMAN");
+      });
+
+      it("sdes_app เพิ่ม/อ่าน/ลบ system_logs ได้ แต่แก้ไม่ได้", async () => {
+        const ins = await asApp("INSERT INTO system_logs (service, level, message) VALUES ('api', 'error', 'x') RETURNING id");
+        expect(ins.rowCount).toBe(1);
+        expect((await asApp("DELETE FROM system_logs WHERE created_at < now() - interval '30 days'")).command).toBe("DELETE");
+        await expect(asApp("UPDATE system_logs SET message = 'y'")).rejects.toThrow(/permission denied/);
+      });
+
+      it("prefix ของ API key ซ้ำไม่ได้", async () => {
+        const r = await pg.query("SELECT indexdef FROM pg_indexes WHERE tablename = 'api_keys' AND indexdef ILIKE '%UNIQUE%prefix%'");
+        expect(r.rowCount).toBe(1);
+      });
+    });
+
     it("sdes_app แตะตาราง _prisma_migrations ไม่ได้", async () => {
       await expect(asApp("SELECT 1 FROM _prisma_migrations LIMIT 1")).rejects.toThrow(/permission denied/);
     });
