@@ -28,6 +28,8 @@ import { SettingsController } from "./settings/settings.controller.js";
 import { ErpController } from "./erp/erp.controller.js";
 import { OpsController } from "./erp/ops.controller.js";
 import { OpsService } from "./erp/ops.service.js";
+import { DashboardController } from "./dashboard/dashboard.controller.js";
+import { DASHBOARD_CLOCK, DashboardService } from "./dashboard/dashboard.service.js";
 import { ErpService } from "./erp/erp.service.js";
 import { ApiKeysController } from "./api-keys/api-keys.controller.js";
 import { ApiKeysService } from "./api-keys/api-keys.service.js";
@@ -59,7 +61,7 @@ import { ReportsController } from "./reports/reports.controller.js";
       }),
     }),
   ],
-  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController, ErpController, OpsController, ApiKeysController, SystemLogsController, VendorsController, ReportsController],
+  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController, ErpController, OpsController, ApiKeysController, SystemLogsController, VendorsController, ReportsController, DashboardController],
   providers: [
     { provide: HEALTH_CHECKS, useFactory: (cfg: AppConfig) => buildHealthChecks(cfg), inject: [APP_CONFIG] },
     AuditService,
@@ -75,6 +77,8 @@ import { ReportsController } from "./reports/reports.controller.js";
     QueueService,
     ReportMetrics,
     OpsService,
+    DashboardService,
+    { provide: DASHBOARD_CLOCK, useValue: () => new Date() },
     DocumentsService,
     StatusGateway,
     // ลำดับสำคัญ: ยืนยันตัวตนก่อน แล้วจึงตรวจสิทธิ์
