@@ -159,6 +159,15 @@ api และ worker เก็บ log ระดับ warning/error ลงตา
 - `GET /vendors?q=&page=&pageSize=` และ `GET /vendors/:id` (AP Clerk, AP Lead) — ยอดรวมนับเฉพาะเอกสารที่ยืนยันแล้วขึ้นไปและไม่ถูกปฏิเสธ; `isNew` ใช้เงื่อนไขเดียวกับเหตุผลความเสี่ยง "ผู้ขายรายใหม่"
 - `GET /reports/summary?from=YYYY-MM&to=YYYY-MM` และ `/reports/summary/export` (Finance Exec, ไม่เกิน 24 เดือน) — ยอดเงินจัดตามวันที่ในใบกำกับ ตัวชี้วัดกระบวนการจัดตามวันที่อัปโหลด (เวลาไทย); ผลวัดเวลาตอบอยู่ใน `qa/complete-missing-features/reports-perf.md` ของ repo วางแผน (`load/reports-perf.mjs`)
 
+## หน้าภาพรวม
+
+`GET /dashboard` (สิทธิ์ `dashboard.view` — ทุก role ของคน, API key เรียกไม่ได้) คืนข้อมูลหน้าแรกของเว็บในคำขอเดียว แต่ละส่วนมีเฉพาะเมื่อผู้เรียกมีสิทธิ์ดูข้อมูลชนิดนั้นอยู่แล้ว (ส่วนที่ไม่มีสิทธิ์ไม่มี key ในผลลัพธ์):
+- `backlog`, `throughput` (14 วันรวมวันนี้ ตามเวลาไทย), `indicators` (7 วันล่าสุด เทียบเป้า 30 วินาทีและ 92%) — ผู้ที่ดูเอกสารได้
+- `finance` (เดือนนี้และเดือนก่อน ตามวันที่ในใบกำกับ ชุดเดียวกับ `/reports/summary`) — Finance Exec
+- `health` (คิว, ERP, `syncFailed`) — ผู้ที่มี `ops.view`; `errors24h` เพิ่มเมื่อมี `logs.view` และ `expiringKeys` (14 วัน) เมื่อมี `apikey.manage`
+
+ตัวอย่างผลลัพธ์อยู่ใน Swagger (`/docs`); ผลวัดเวลาตอบอยู่ใน `qa/overview-dashboard/dashboard-perf.md` ของ repo วางแผน (`load/dashboard-perf.mjs`)
+
 ## ความปลอดภัย
 
 - **Rate limit** เก็บตัวนับใน Redis (ใช้ร่วมกันได้หลาย instance) — ค่าตาม `RATE_LIMIT_*` ด้านบน นับต่อ IP จริงของผู้ใช้ผ่าน `TRUST_PROXY` (ดูตาราง Environment) — ชุด E2E ที่ล็อกอินหลายบัญชีจากเครื่องเดียวต้องเพิ่ม `RATE_LIMIT_AUTH`

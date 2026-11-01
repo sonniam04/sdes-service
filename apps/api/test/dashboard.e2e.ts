@@ -108,6 +108,12 @@ describe.skipIf(!hasDatabase)("dashboard (spec overview-dashboard)", () => {
     });
   });
 
+  it("Swagger มี /dashboard พร้อมตัวอย่างผลลัพธ์", async () => {
+    const doc = await http().get("/docs-json").expect(200);
+    const op = doc.body.paths["/dashboard"]?.get;
+    expect(op?.responses?.["200"]?.content?.["application/json"]?.schema?.example).toHaveProperty("backlog.waiting.count");
+  });
+
   describe("Work backlog", () => {
     it("จำนวนแต่ละกลุ่มเพิ่มตามเอกสาร และเก่าสุดคือฉบับที่รอนานที่สุด", async () => {
       const before = (await get("AP_LEAD")).backlog;
