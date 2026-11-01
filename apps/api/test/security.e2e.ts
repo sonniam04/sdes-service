@@ -5,7 +5,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@sdes/db";
 import { hasDatabase } from "./test-db.js";
-import { authed, bootApp, createUser, ownerDb } from "./helpers.js";
+import { bootApp, createUser, ownerDb } from "./helpers.js";
 
 describe.skipIf(!hasDatabase)("rate limiting (spec platform-security)", () => {
   let app: INestApplication;
@@ -56,7 +56,9 @@ describe.skipIf(!hasDatabase)("rate limiting (spec platform-security)", () => {
 
   it("อัปโหลดจำกัดต่อผู้ใช้ 60 คำขอต่อนาที", async () => {
     const u = await createUser(db, ["AP_CLERK"]);
-    const h = await authed(app, u.email);
+    // ล็อกอินจาก IP ของตัวเอง: ตัวนับอยู่ใน Redis ที่ test ไฟล์อื่น (รันขนานกัน) ล็อกอินจาก loopback ร่วมด้วย
+    const login = await http().post("/auth/login").set("X-Forwarded-For", ip()).send({ email: u.email, password: u.password }).expect(200);
+    const h = { Authorization: `Bearer ${login.body.accessToken as string}` };
     // คำขอว่าง (ไม่มีไฟล์) ผ่าน guard แล้วตอบตามปกติ — นับเฉพาะอัตรา
     const codes: number[] = [];
     for (let i = 0; i < 61; i++) codes.push((await http().post("/documents").set(h).set("X-Forwarded-For", ip())).status);
