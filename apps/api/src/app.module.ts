@@ -27,11 +27,13 @@ import { ReviewService } from "./documents/review.service.js";
 import { SettingsController } from "./settings/settings.controller.js";
 import { ErpController } from "./erp/erp.controller.js";
 import { OpsController } from "./erp/ops.controller.js";
+import { OpsService } from "./erp/ops.service.js";
 import { ErpService } from "./erp/erp.service.js";
 import { ApiKeysController } from "./api-keys/api-keys.controller.js";
 import { ApiKeysService } from "./api-keys/api-keys.service.js";
 import { SystemLogsController } from "./system-logs/system-logs.controller.js";
 import { VendorsController } from "./vendors/vendors.controller.js";
+import { ReportMetrics } from "./reports/report-metrics.js";
 import { ReportsController } from "./reports/reports.controller.js";
 
 @Module({
@@ -71,6 +73,8 @@ import { ReportsController } from "./reports/reports.controller.js";
     ScannerService,
     StorageService,
     QueueService,
+    ReportMetrics,
+    OpsService,
     DocumentsService,
     StatusGateway,
     // ลำดับสำคัญ: ยืนยันตัวตนก่อน แล้วจึงตรวจสิทธิ์

@@ -4,10 +4,11 @@ import { ApiBearerAuth, ApiBody, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import { z } from "zod";
 import { DOCUMENT_STATUSES, TransitionError } from "@sdes/core";
-import { StaleDocumentError, loadErpConnection, transitionDocument, type PrismaClient } from "@sdes/db";
+import { StaleDocumentError, transitionDocument, type PrismaClient } from "@sdes/db";
 import { CurrentUser, RequirePermission, type Principal } from "../auth/decorators.js";
 import { QueueService } from "../documents/queue.service.js";
 import { PRISMA } from "../prisma.js";
+import { OpsService } from "./ops.service.js";
 
 const ResendBody = z.object({ ids: z.array(z.string().uuid("รหัสเอกสารไม่ถูกต้อง")).min(1, "เลือกอย่างน้อยหนึ่งฉบับ").max(100, "ส่งใหม่ได้ครั้งละไม่เกิน 100 ฉบับ") });
 
@@ -18,27 +19,25 @@ export class OpsController {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     private readonly queue: QueueService,
+    private readonly ops: OpsService,
   ) {}
 
   @Get("ops/overview")
   @RequirePermission("ops.view")
   async overview() {
-    const [grouped, last, conn, extract, sync] = await Promise.all([
+    const [grouped, queues, erp] = await Promise.all([
       this.prisma.document.groupBy({ by: ["status"], _count: { _all: true } }),
-      this.prisma.document.aggregate({ _max: { syncedAt: true } }),
-      loadErpConnection(this.prisma),
-      this.queue.extract.getJobCounts("waiting", "active", "delayed"),
-      this.queue.sync.getJobCounts("waiting", "active", "delayed"),
+      this.ops.queues(),
+      this.ops.erpStatus(),
     ]);
     const counts = Object.fromEntries(DOCUMENT_STATUSES.map((s) => [s, 0]));
     for (const g of grouped) counts[g.status] = g._count._all;
-    const pending = (c: Record<string, number>) => (c.waiting ?? 0) + (c.active ?? 0) + (c.delayed ?? 0);
     return {
       counts,
-      queues: { extract: pending(extract), sync: pending(sync) },
-      lastSyncedAt: last._max.syncedAt,
-      autoSync: conn?.autoSync ?? false,
-      connected: !!conn,
+      queues,
+      lastSyncedAt: erp.lastSyncedAt,
+      autoSync: erp.autoSync,
+      connected: erp.connected,
       serverTime: new Date().toISOString(),
     };
   }
