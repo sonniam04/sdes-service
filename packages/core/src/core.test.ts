@@ -83,7 +83,7 @@ describe("state machine (spec document-lifecycle)", () => {
 
 describe("permission matrix (spec user-access)", () => {
   const expected: Record<Role, Action[]> = {
-    AP_CLERK: ["document.upload", "document.view", "document.view_file", "document.edit", "document.retry", "document.verify", "vendor.view"],
+    AP_CLERK: ["document.upload", "document.view", "document.view_file", "document.edit", "document.retry", "document.verify", "vendor.view", "dashboard.view"],
     AP_LEAD: [
       "document.upload",
       "document.view",
@@ -93,9 +93,10 @@ describe("permission matrix (spec user-access)", () => {
       "document.verify",
       "document.approve",
       "vendor.view",
+      "dashboard.view",
     ],
-    FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all", "ops.view"],
-    SYS_ADMIN: ["audit.view_all", "user.manage", "settings.manage", "erp.configure", "apikey.manage", "sync.resend", "ops.view", "logs.view"],
+    FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all", "ops.view", "dashboard.view"],
+    SYS_ADMIN: ["audit.view_all", "user.manage", "settings.manage", "erp.configure", "apikey.manage", "sync.resend", "ops.view", "logs.view", "dashboard.view"],
   };
 
   // ตาราง role × action ครบทุกช่อง

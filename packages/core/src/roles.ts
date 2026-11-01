@@ -23,6 +23,8 @@ export const ACTIONS = [
   "vendor.view",
   /** ค้น system logs ของ api/worker (spec system-logs) */
   "logs.view",
+  /** หน้าภาพรวมหลังล็อกอิน (spec overview-dashboard) — ทุก role ของคน ไม่ให้ขอบเขตของ API key */
+  "dashboard.view",
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -34,14 +36,15 @@ const CLERK: Action[] = [
   "document.retry",
   "document.verify",
   "vendor.view",
+  "dashboard.view",
 ];
 
 export const PERMISSIONS: Record<Role, readonly Action[]> = {
   AP_CLERK: CLERK,
   AP_LEAD: [...CLERK, "document.approve"],
-  FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all", "ops.view"],
+  FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all", "ops.view", "dashboard.view"],
   // ผู้ดูแลระบบไม่ได้สิทธิ์งานบัญชีโดยอัตโนมัติ (แยกหน้าที่)
-  SYS_ADMIN: ["user.manage", "settings.manage", "erp.configure", "apikey.manage", "audit.view_all", "sync.resend", "ops.view", "logs.view"],
+  SYS_ADMIN: ["user.manage", "settings.manage", "erp.configure", "apikey.manage", "audit.view_all", "sync.resend", "ops.view", "logs.view", "dashboard.view"],
 };
 
 /** ผู้ใช้หลาย role ได้สิทธิ์รวมของทุก role */
