@@ -41,7 +41,9 @@ describe.skipIf(!hasDatabase)("API keys (spec api-keys)", () => {
       const r = await create({ name: `เครื่องสแกน ${randomBytes(3).toString("hex")}`, scopes: ["document.upload"], expiresInDays: 90 }).expect(201);
       const key: string = r.body.key;
       expect(key).toMatch(/^sdes_[A-Za-z0-9]{8}_[A-Za-z0-9_-]{40,}$/);
-      expect(r.body.apiKey).toMatchObject({ scopes: ["document.upload"], status: "active", prefix: key.split("_")[1] });
+      // ส่วนสุ่มเป็น base64url ซึ่งมี "_" ได้ จึงตัดตามความยาวของ prefix แทนการ split
+      const secret = key.slice("sdes_".length + 9);
+      expect(r.body.apiKey).toMatchObject({ scopes: ["document.upload"], status: "active", prefix: key.slice(5, 13) });
       const days = (new Date(r.body.apiKey.expiresAt).getTime() - Date.now()) / 86_400_000;
       expect(days).toBeGreaterThan(89.9);
       expect(days).toBeLessThan(90.1);
@@ -51,10 +53,10 @@ describe.skipIf(!hasDatabase)("API keys (spec api-keys)", () => {
       expect(list.body.find((k: { id: string }) => k.id === r.body.apiKey.id)).toMatchObject({ createdBy: expect.any(String), lastUsedAt: null });
 
       const row = await db.apiKey.findUniqueOrThrow({ where: { id: r.body.apiKey.id } });
-      expect(JSON.stringify(row)).not.toContain(key.split("_")[2]);
+      expect(JSON.stringify(row)).not.toContain(secret);
       const ev = await db.auditEvent.findFirstOrThrow({ where: { action: "apikey.created", entityId: row.id } });
       expect(ev.actorUserId).toBe(adminId);
-      expect(JSON.stringify(ev.details)).not.toContain(key.split("_")[2]);
+      expect(JSON.stringify(ev.details)).not.toContain(secret);
     });
 
     it("ค่าเริ่มต้นอายุ 90 วัน; อายุนอกช่วง 1–365 และชื่อซ้ำกับ key ที่ยังใช้ได้ถูกปฏิเสธ", async () => {
