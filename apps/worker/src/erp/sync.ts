@@ -11,9 +11,9 @@ import {
   syncPermanent,
   syncTransient,
   STATUS_CHANNEL,
+  asDocumentData,
   buildErpPayload,
   erpSyncJobOptions,
-  type DocumentData,
   type ErpAdapter,
   type ErpAttachment,
   type ErpSyncJob,
@@ -94,7 +94,7 @@ export async function processSync(deps: SyncDeps, documentId: string, attempt: n
   const row = await prisma.erpSyncAttempt.create({ data: { documentId, adapter: adapterName, attempt, status: "PENDING" } });
   try {
     if (!conn) throw syncPermanent("ยังไม่ได้ตั้งค่าการเชื่อมต่อ ERP");
-    const payload = buildErpPayload({ id: doc.id, docNo: doc.docNo, data: doc.data as unknown as DocumentData }, { erpPartnerId: doc.vendor?.erpPartnerId });
+    const payload = buildErpPayload({ id: doc.id, docNo: doc.docNo, data: asDocumentData(doc.data) }, { erpPartnerId: doc.vendor?.erpPartnerId });
     const attachment = await deps.loadAttachment(doc).catch((e) => {
       throw syncTransient("อ่านไฟล์ต้นฉบับไม่ได้", e);
     });

@@ -9,7 +9,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import sharp from "sharp";
-import { DOCUMENT_STATUSES, TransitionError, type Actor, type DocumentStatus } from "@sdes/core";
+import { DOCUMENT_STATUSES, TransitionError, asDocumentData, type Actor, type DocumentStatus } from "@sdes/core";
 import { Prisma, StaleDocumentError, transitionDocument, type PrismaClient } from "@sdes/db";
 import { AuditService } from "../audit/audit.service.js";
 import type { Principal } from "../auth/decorators.js";
@@ -209,6 +209,8 @@ export class DocumentsService {
     const { statusHistory, syncAttempts, storageKey: _key, ...doc } = d;
     return {
       ...doc,
+      // jsonb ค่าเริ่มต้นเป็น {} — ส่งให้หน้าตรวจครบทุก field เสมอ
+      data: asDocumentData(doc.data),
       // ประวัติการส่งเข้า ERP ทุกครั้ง (spec erp-sync "Attempt history")
       syncAttempts: syncAttempts.map((a) => ({
         attempt: a.attempt,

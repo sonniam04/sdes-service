@@ -120,6 +120,26 @@ describe.skipIf(!hasDatabase)("review (spec document-review + risk-assessment)",
     });
   });
 
+  describe("ข้อมูลว่าง ({}) ของแถวที่สร้างก่อนเก็บผลการอ่าน", () => {
+    async function legacy() {
+      const d = await extracted();
+      return db.document.update({ where: { id: d.id }, data: { data: {}, fieldMeta: {} } });
+    }
+
+    it("GET ได้ข้อมูลครบทุก field (รายการว่าง) ไม่ใช่ {}", async () => {
+      const d = await legacy();
+      const r = await http().get(`/documents/${d.id}`).set(users.clerk!.h).expect(200);
+      expect(r.body.data.items).toEqual([]);
+      expect(r.body.data).toMatchObject({ grandTotal: null, vatExempt: false });
+    });
+
+    it("แก้ข้อมูลได้ และยืนยันได้ 422 พร้อมรายการที่ต้องแก้ ไม่ใช่ 500", async () => {
+      const d = await legacy();
+      const p = await patch(d.id, d.version, { invoiceNo: "IV-LEGACY" }).expect(200);
+      await http().post(`/documents/${d.id}/verify`).set(users.clerk!.h).send({ version: p.body.version }).expect(422);
+    });
+  });
+
   describe("4.2 แก้ข้อมูล", () => {
     it("แก้เลขที่เอกสาร: audit ราย field และหน้าตรวจเห็นว่าถูกแก้", async () => {
       const d = await extracted({ data: validData({ invoiceNo: "INV-2O26-001" }) });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyHeader, hasErrors, toDocumentData, validateDocument, type DocumentData, type ValidationContext } from "./index.js";
+import { asDocumentData, emptyHeader, hasErrors, toDocumentData, validateDocument, type DocumentData, type ValidationContext } from "./index.js";
 
 const COMPANY = "0994000165617";
 const ctx: ValidationContext = { companyTaxId: COMPANY, uploadedAt: "2026-10-29T03:00:00Z" };
@@ -211,5 +211,24 @@ describe("validateDocument (spec invoice-validation)", () => {
     expect(d.grandTotal).toBe("10700.00");
     expect(d.vatExempt).toBe(true);
     expect(d.invoiceNo).toBeNull();
+  });
+});
+
+describe("asDocumentData — ข้อมูล jsonb จากฐาน", () => {
+  it("แถวเก่าที่เป็น {} ได้ทุก field เป็นค่าว่างและรายการว่าง แล้วตรวจได้โดยไม่ throw", () => {
+    const d = asDocumentData({});
+    expect(d.items).toEqual([]);
+    expect(d.grandTotal).toBeNull();
+    expect(d.vatExempt).toBe(false);
+    expect(() => validateDocument(d, { companyTaxId: null, uploadedAt: "2026-10-29T00:00:00Z" })).not.toThrow();
+  });
+
+  it("null หรือค่าที่ไม่ใช่ object ก็ได้ข้อมูลว่าง", () => {
+    for (const v of [null, undefined, "x", 3, []]) expect(asDocumentData(v).items).toEqual([]);
+  });
+
+  it("ข้อมูลครบคืนค่าเดิม", () => {
+    const full = { ...asDocumentData({}), invoiceNo: "IV-1", grandTotal: "10.00", vatExempt: true, items: [{ no: 1, description: "a", quantity: "1", unitPrice: "10.00", discount: null, vat: null, amount: "10.00" }] };
+    expect(asDocumentData(JSON.parse(JSON.stringify(full)))).toEqual(full);
   });
 });

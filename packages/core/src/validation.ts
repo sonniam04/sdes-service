@@ -58,6 +58,18 @@ export function toDocumentData(r: Pick<ExtractionResult, "header" | "items">): D
   return { ...header, items };
 }
 
+/**
+ * ข้อมูลเอกสารจาก column jsonb → DocumentData ที่มีครบทุก field
+ * ค่าเริ่มต้นของ column คือ {} (แถวที่สร้างก่อนเก็บผลการอ่าน หรือยังไม่ได้อ่าน) — ห้าม cast ตรง ๆ
+ */
+export function asDocumentData(json: unknown): DocumentData {
+  const o = (json !== null && typeof json === "object" && !Array.isArray(json) ? json : {}) as Record<string, unknown>;
+  const header = Object.fromEntries(
+    HEADER_FIELDS.map((k) => [k, k === "vatExempt" ? o[k] === true : typeof o[k] === "string" ? o[k] : null]),
+  ) as HeaderValues;
+  return { ...header, items: Array.isArray(o.items) ? (o.items as DocumentItem[]) : [] };
+}
+
 /** ตรวจข้อมูลเอกสารทั้งหมด คืนรายการที่ไม่ผ่าน (ว่าง = ผ่านทุกกฎ) */
 export function validateDocument(d: DocumentData, ctx: ValidationContext): ValidationIssue[] {
   const issues: ValidationIssue[] = [];

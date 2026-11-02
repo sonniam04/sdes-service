@@ -12,6 +12,7 @@ import { z } from "zod";
 import {
   HEADER_FIELDS,
   TransitionError,
+  asDocumentData,
   assessRisk,
   hasErrors,
   validateDocument,
@@ -108,7 +109,7 @@ export class ReviewService {
       if (doc.version !== version)
         throw new ConflictException({ code: "STALE", message: "ข้อมูลถูกแก้ไปแล้ว กรุณาดูค่าล่าสุดก่อนแก้ต่อ", latest: this.view(doc) });
 
-      const before = doc.data as unknown as DocumentData;
+      const before = asDocumentData(doc.data);
       const after = { ...before, ...changes } as DocumentData;
       const meta = (doc.fieldMeta ?? {}) as FieldMeta;
       for (const c of diffData(before, after)) {
@@ -143,7 +144,7 @@ export class ReviewService {
       this.prisma.$transaction(async (tx) => {
         const current = await tx.document.findUnique({ where: { id } });
         if (!current) throw new NotFoundException("ไม่พบเอกสาร");
-        const data = current.data as unknown as DocumentData;
+        const data = asDocumentData(current.data);
         const issues = await this.validate(tx, data, id, current.createdAt);
         if (current.status === "EXTRACTED" && hasErrors(issues)) {
           await tx.document.update({ where: { id }, data: { validationIssues: issues as unknown as Prisma.InputJsonValue } });
@@ -259,7 +260,7 @@ export class ReviewService {
   }
 
   private view(d: { id: string; docNo: string; status: string; version: number; data: unknown; validationIssues: unknown; fieldMeta: unknown }) {
-    return { id: d.id, docNo: d.docNo, status: d.status, version: d.version, data: d.data, validationIssues: d.validationIssues, fieldMeta: d.fieldMeta };
+    return { id: d.id, docNo: d.docNo, status: d.status, version: d.version, data: asDocumentData(d.data), validationIssues: d.validationIssues, fieldMeta: d.fieldMeta };
   }
 
   /** แปลงข้อผิดพลาดของ state machine และ unique index เป็น HTTP */
