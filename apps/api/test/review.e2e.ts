@@ -5,7 +5,7 @@ import sharp from "sharp";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DocumentData, Role } from "@sdes/core";
-import { Prisma, type PrismaClient } from "@sdes/db";
+import { Prisma, projectDocumentData, type PrismaClient } from "@sdes/db";
 import { QueueService } from "../src/documents/queue.service.js";
 import { hasDatabase } from "./test-db.js";
 import { authed, bootApp, createUser, ownerDb } from "./helpers.js";
@@ -194,7 +194,22 @@ describe.skipIf(!hasDatabase)("review (spec document-review + risk-assessment)",
       const d = await extracted({ data: validData({ grandTotal: "10070.00" }) });
       const r = await http().post(`/documents/${d.id}/verify`).set(users.clerk!.h).send({ version: d.version }).expect(422);
       expect(r.body.issues.map((i: { code: string }) => i.code)).toContain("GRAND_TOTAL");
-      expect((await db.document.findUniqueOrThrow({ where: { id: d.id } })).status).toBe("EXTRACTED");
+      const after = await db.document.findUniqueOrThrow({ where: { id: d.id } });
+      expect(after.status).toBe("EXTRACTED");
+      // รายการที่ต้องแก้ถูกบันทึกไว้กับเอกสาร ให้หน้าตรวจเห็นตั้งแต่เปิด (ไม่หายไปพร้อม transaction ที่ยกเลิก)
+      expect((after.validationIssues as { code: string }[]).map((i) => i.code)).toContain("GRAND_TOTAL");
+    });
+
+    it("เลขที่ซ้ำที่เพิ่งเกิดหลังอ่าน: 422 และบันทึก DUPLICATE_INVOICE ไว้กับเอกสาร", async () => {
+      const data = validData();
+      const first = await extracted({ data });
+      const dup = await extracted({ data }); // อ่านเสร็จตอนที่ฉบับแรกยังไม่ยืนยัน จึงยังไม่มี error เลขที่ซ้ำ
+      // column ที่ worker คัดลอกจากผลการอ่าน (การตรวจเลขที่ซ้ำค้นจาก column เหล่านี้)
+      for (const d of [first, dup]) await db.document.update({ where: { id: d.id }, data: projectDocumentData(data) });
+      await http().post(`/documents/${first.id}/verify`).set(users.clerk!.h).send({ version: first.version }).expect(200);
+      await http().post(`/documents/${dup.id}/verify`).set(users.clerk!.h).send({ version: dup.version }).expect(422);
+      const after = await db.document.findUniqueOrThrow({ where: { id: dup.id } });
+      expect((after.validationIssues as { code: string }[]).map((i) => i.code)).toContain("DUPLICATE_INVOICE");
     });
 
     it("ผู้ขายใหม่ → PENDING_APPROVAL + สร้างผู้ขาย + ประวัติมีทั้งผู้ใช้และระบบ", async () => {

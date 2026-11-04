@@ -21,6 +21,7 @@ import {
   type DocumentItem,
   type FieldMeta,
   type RiskFlag,
+  type ValidationIssue,
 } from "@sdes/core";
 import {
   ESTABLISHED_VENDOR_STATUSES,
@@ -140,6 +141,8 @@ export class ReviewService {
   /** ยืนยันเอกสาร: ตรวจซ้ำ → VERIFIED → จับคู่ผู้ขาย → ประเมินความเสี่ยง → PENDING_APPROVAL ถ้าเสี่ยง */
   async verify(id: string, version: number | undefined, user: Principal, ip?: string) {
     let flags: RiskFlag[] = [];
+    /** ผลตรวจที่ยังมี ERROR — บันทึกหลัง transaction จบ (ถ้า throw ใน transaction การบันทึกจะถูกยกเลิกไปด้วย) */
+    let blocked: ValidationIssue[] | null = null;
     const doc = await this.guard(() =>
       this.prisma.$transaction(async (tx) => {
         const current = await tx.document.findUnique({ where: { id } });
@@ -147,8 +150,8 @@ export class ReviewService {
         const data = asDocumentData(current.data);
         const issues = await this.validate(tx, data, id, current.createdAt);
         if (current.status === "EXTRACTED" && hasErrors(issues)) {
-          await tx.document.update({ where: { id }, data: { validationIssues: issues as unknown as Prisma.InputJsonValue } });
-          throw new UnprocessableEntityException({ code: "HAS_ERRORS", message: "ยังมีรายการที่ต้องแก้ก่อนยืนยัน", issues });
+          blocked = issues;
+          return null;
         }
 
         const verified = await transitionDocument(tx, { documentId: id, to: "VERIFIED", actor: actorOf(user), ip, expectedVersion: version });
@@ -198,6 +201,15 @@ export class ReviewService {
         });
       }),
     );
+    if (!doc) {
+      const issues = blocked ?? [];
+      // บันทึกไว้กับเอกสาร ให้หน้าตรวจเห็นรายการที่ต้องแก้ตั้งแต่เปิด (เช่น เลขที่ซ้ำที่เกิดขึ้นหลังการอ่าน)
+      await this.prisma.document.updateMany({
+        where: { id, status: "EXTRACTED" },
+        data: { validationIssues: issues as unknown as Prisma.InputJsonValue },
+      });
+      throw new UnprocessableEntityException({ code: "HAS_ERRORS", message: "ยังมีรายการที่ต้องแก้ก่อนยืนยัน", issues });
+    }
     await this.queue.publishStatus({ id: doc.id, docNo: doc.docNo, status: doc.status, at: new Date().toISOString() }).catch(() => {});
     // เคสไม่เสี่ยงส่งเข้า ERP ได้เลย (worker รอถ้าการส่งอัตโนมัติปิด; reconciler เก็บตกถ้า enqueue ไม่สำเร็จ)
     if (doc.status === "VERIFIED") await this.queue.enqueueSync([doc.id]).catch(() => {});
