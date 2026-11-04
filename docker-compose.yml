@@ -152,7 +152,9 @@ services:
   odoo:
     profiles: ["odoo"]
     restart: unless-stopped
-    image: odoo:19
+    # odoo:19 + ฟอนต์ไทยสำหรับ PDF (docker/odoo/Dockerfile)
+    build: docker/odoo
+    image: sdes-odoo:19
     # ฐานเดียว sdes_erp — JSON-2 จึงไม่ต้องส่ง X-Odoo-Database
     command: ["--db-filter=^sdes_erp$$"]
     environment:
@@ -168,6 +170,18 @@ services:
       interval: 10s
       timeout: 8s
       retries: 30
+
+  # จับอีเมลที่ Odoo ส่ง (เช่น แจ้งการชำระเงินถึงผู้ขาย) ไว้ดูที่ http://127.0.0.1:8025 — ไม่ส่งออกไปจริง
+  mailpit:
+    profiles: ["odoo"]
+    restart: unless-stopped
+    image: axllent/mailpit:v1.31.0
+    ports: ["${MAILPIT_HOST_PORT:-8025}:8025"]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
 volumes:
   odoo-dbdata:
