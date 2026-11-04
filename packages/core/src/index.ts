@@ -10,3 +10,4 @@ export * from "./erp-client/index.js";
 export * from "./providers.js";
 export * from "./redact.js";
 export * from "./messaging.js";
+export * from "./prod-config.js";

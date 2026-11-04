@@ -4,6 +4,8 @@
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/client"
+  // native = เครื่อง dev; musl = image node:22-alpine บน x86-64 (dev) และ ARM64 (Oracle Ampere A1) — design D3
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {

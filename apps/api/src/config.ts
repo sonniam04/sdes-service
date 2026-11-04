@@ -1,10 +1,11 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { withConnectionLimit } from "@sdes/db";
 
 // dev: อ่าน Service/.env และชี้ไปยัง port ฝั่งเครื่องของ docker compose
 // ใน container ค่าเหล่านี้มาจาก environment ของ compose อยู่แล้ว
 const envFile = resolve(__dirname, "../../../.env");
-if (!process.env.DATABASE_URL && existsSync(envFile)) process.loadEnvFile(envFile);
+if (process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL && existsSync(envFile)) process.loadEnvFile(envFile);
 
 const env = (k: string, fallback?: string) => {
   const v = process.env[k] ?? fallback;
@@ -18,7 +19,11 @@ export function loadConfig() {
   const db = env("POSTGRES_DB", "sdes");
   return {
     port: Number(env("PORT", "3000")),
-    databaseUrl: process.env.DATABASE_URL ?? `postgresql://sdes_app:${env("POSTGRES_APP_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,
+    // pool 10 ต่อ client (design D5)
+    databaseUrl: withConnectionLimit(
+      process.env.DATABASE_URL ?? `postgresql://sdes_app:${env("POSTGRES_APP_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,
+      Number(env("DB_CONNECTION_LIMIT", "10")),
+    ),
     databaseOwnerUrl:
       process.env.DATABASE_OWNER_URL ??
       `postgresql://${env("POSTGRES_OWNER_USER", "sdes_owner")}:${env("POSTGRES_OWNER_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,

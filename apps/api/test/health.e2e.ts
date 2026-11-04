@@ -38,6 +38,25 @@ describe("GET /health", () => {
     expect(res.body.checks.find((c: { name: string }) => c.name === "virus-scanner")).toMatchObject({ ok: false });
   });
 
+  it("dev: บอกข้อความ error ของบริการที่ล่ม", async () => {
+    app = await boot([ok("database"), down("virus-scanner")]);
+    const res = await request(app.getHttpServer()).get("/health").expect(503);
+    expect(res.body.checks.find((c: { name: string }) => c.name === "virus-scanner")).toEqual({ name: "virus-scanner", ok: false, error: "virus-scanner ล่ม" });
+  });
+
+  it("production: คำตอบมีเฉพาะชื่อบริการ + ok ไม่มีข้อความ error (design D9)", async () => {
+    app = await boot([ok("database"), down("virus-scanner")]);
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const res = await request(app.getHttpServer()).get("/health").expect(503);
+      expect(res.body).toEqual({ status: "degraded", checks: [{ name: "database", ok: true }, { name: "virus-scanner", ok: false }] });
+      expect(JSON.stringify(res.body)).not.toContain("ล่ม");
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
   it("Swagger JSON มี path /health และ /auth/login", async () => {
     app = await boot([ok("database")]);
     const res = await request(app.getHttpServer()).get("/docs-json").expect(200);

@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { writeFileSync } from "node:fs";
 import { NestFactory } from "@nestjs/core";
+import { assertProductionEnv } from "@sdes/core";
 import { DbLogger, SystemLogSink, createPrisma } from "@sdes/db";
 import { loadWorkerConfig } from "./config.js";
 import { WorkerModule } from "./worker.module.js";
@@ -8,6 +9,8 @@ import { WorkerModule } from "./worker.module.js";
 const READY_FILE = "/tmp/worker-ready";
 
 async function bootstrap() {
+  // production: ค่าตั้งไม่ครบให้หยุดพร้อมชื่อค่า ก่อนต่อฐานข้อมูลหรือรับคำขอ (design D6)
+  assertProductionEnv("worker");
   // warn/error เก็บลง system_logs ด้วย (spec system-logs) — ฐานล่มไม่กระทบงาน
   const sink = new SystemLogSink(createPrisma(loadWorkerConfig().databaseUrl), "worker");
   sink.start();
