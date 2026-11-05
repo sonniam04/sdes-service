@@ -1,0 +1,58 @@
+name: Deploy
+
+# กดสั่งเองจากแท็บ Actions เท่านั้น (design D7) — build อยู่บนเครื่อง production จึงใช้นาทีของ Actions น้อย
+# secrets ที่ต้องตั้ง: DEPLOY_HOST (โดเมนหรือ IP), DEPLOY_SSH_KEY (private key ของ key ที่ผูก forced command ssh-deploy.sh),
+#                     DEPLOY_KNOWN_HOSTS (ผลของ `ssh-keyscan -t ed25519 <host>` ที่ตรวจ fingerprint แล้ว)
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: deploy หรือ rollback
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      service_ref:
+        description: git ref ของ sdes-service (branch, tag หรือ SHA)
+        default: main
+      web_ref:
+        description: git ref ของ sdes-web
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: ตรวจ ref
+        env:
+          SVC: ${{ inputs.service_ref }}
+          WEB: ${{ inputs.web_ref }}
+        run: |
+          for r in "$SVC" "$WEB"; do
+            printf '%s' "$r" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$' || { echo "ref ไม่ถูกต้อง: $r"; exit 1; }
+          done
+      - name: SSH ไปเครื่อง production
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          ACTION: ${{ inputs.action }}
+          SVC: ${{ inputs.service_ref }}
+          WEB: ${{ inputs.web_ref }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          if [ "$ACTION" = rollback ]; then CMD="rollback"; else CMD="deploy $SVC $WEB"; fi
+          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 "deploy@$HOST" "$CMD"
+      - name: ลบ key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

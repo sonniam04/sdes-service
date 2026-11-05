@@ -2,6 +2,8 @@
 name: sdes
 
 x-app-env: &app-env
+  # image ตั้ง NODE_ENV=production — stack dev ไม่ใช้การตรวจค่าตั้งของ production (cookie ไม่ secure, ไม่มี proxy)
+  NODE_ENV: development
   DATABASE_URL: postgresql://sdes_app:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
   DATABASE_OWNER_URL: postgresql://${POSTGRES_OWNER_USER}:${POSTGRES_OWNER_PASSWORD}@postgres:5432/${POSTGRES_DB}
   REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
