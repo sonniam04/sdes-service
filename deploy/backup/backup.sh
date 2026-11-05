@@ -4,6 +4,8 @@
 #   BACKUP_NAME  ชื่อชุด (ค่าเริ่มต้น = วันเวลาปัจจุบัน YYYY-MM-DD_HHMM — เรียงตามชื่อ = เรียงตามเวลา)
 # /backups เป็น bind mount ของ /opt/sdes/backups บนเครื่อง (นอก volume ข้อมูล)
 set -eu
+# ชุดสำรองมีข้อมูลทั้งระบบ — root อ่านได้คนเดียว ไม่ว่าจะเรียกจาก cron หรือ docker exec
+umask 077
 [ -f /run/backup.env ] && . /run/backup.env
 NAME="${BACKUP_NAME:-$(date +%Y-%m-%d_%H%M)}"
 KEEP="${BACKUP_KEEP:-7}"
