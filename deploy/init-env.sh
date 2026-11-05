@@ -2,7 +2,7 @@
 # สร้างไฟล์ค่าตั้ง production ด้วยค่าสุ่ม (design D6) — รันบนเครื่อง production ครั้งเดียว
 #   sh deploy/init-env.sh [ไฟล์ปลายทาง]                  (ค่าเริ่มต้น /opt/sdes/.env.production)
 # ถามค่าที่สุ่มไม่ได้ทีละข้อ หรือส่งมาทาง environment เพื่อรันแบบไม่โต้ตอบ:
-#   SDES_DOMAIN ACME_EMAIL SEED_ADMIN_EMAIL COMPANY_TAX_ID COMPANY_NAME EXTRACTION_PROVIDER GEMINI_API_KEY ANTHROPIC_API_KEY
+#   SDES_DOMAIN SEED_ADMIN_EMAIL COMPANY_TAX_ID COMPANY_NAME EXTRACTION_PROVIDER GEMINI_API_KEY ANTHROPIC_API_KEY
 # ไม่เขียนทับไฟล์เดิม · ไฟล์ mode 600 · ไม่พิมพ์ค่า secret ออกหน้าจอ
 set -eu
 OUT="${1:-/opt/sdes/.env.production}"
@@ -27,7 +27,6 @@ ask() { # ask <ชื่อ> <คำถาม> [ค่าเริ่มต้�
 }
 
 ask SDES_DOMAIN "โดเมนของระบบ (เช่น sdes-demo.duckdns.org)"
-ask ACME_EMAIL "อีเมลสำหรับแจ้งเตือนใบรับรอง Let's Encrypt" ""
 ask SEED_ADMIN_EMAIL "อีเมลของ System Admin คนแรก"
 ask COMPANY_TAX_ID "เลขประจำตัวผู้เสียภาษีของบริษัท (เว้นว่างได้ แก้ภายหลังในหน้าตั้งค่า)" ""
 ask COMPANY_NAME "ชื่อบริษัท (เว้นว่างได้)" ""
@@ -49,7 +48,6 @@ cat >"$TMP" <<EOF
 # ค่าตั้ง production ของ SDES — สร้างโดย deploy/init-env.sh $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # ห้าม commit / ส่งต่อ / แสดงในที่สาธารณะ · สำรองไฟล์นี้แยกไว้ (หายแล้วกู้ชุดสำรองฐานข้อมูลไม่ได้)
 SDES_DOMAIN=$SDES_DOMAIN
-ACME_EMAIL=$ACME_EMAIL
 
 POSTGRES_DB=sdes
 POSTGRES_OWNER_USER=sdes_owner

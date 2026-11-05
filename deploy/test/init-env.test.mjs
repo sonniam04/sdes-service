@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const script = fileURLToPath(new URL("../init-env.sh", import.meta.url));
-const inputs = { SDES_DOMAIN: "sdes.example.test", SEED_ADMIN_EMAIL: "admin@example.test", ACME_EMAIL: "ops@example.test", EXTRACTION_PROVIDER: "fake" };
+const inputs = { SDES_DOMAIN: "sdes.example.test", SEED_ADMIN_EMAIL: "admin@example.test", EXTRACTION_PROVIDER: "fake" };
 const run = (out, extra = {}) =>
   spawnSync("sh", [script, out], { env: { ...process.env, ...inputs, ...extra }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const parse = (text) =>
