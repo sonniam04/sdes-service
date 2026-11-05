@@ -19,7 +19,7 @@ else
   fi
 fi
 [ -n "$TARGET" ] || die "ไม่พบ release ก่อนหน้าที่สำเร็จ"
-for img in sdes-api sdes-worker sdes-web; do
+for img in sdes-api sdes-worker sdes-web sdes-backup; do
   docker image inspect "$img:$TARGET" >/dev/null 2>&1 || die "ไม่มี image $img:$TARGET บนเครื่อง (ถูกลบไปแล้ว) — deploy ref นั้นใหม่แทน"
 done
 

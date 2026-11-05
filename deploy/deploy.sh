@@ -30,7 +30,7 @@ WEB_SHA=$(checkout "$SDES_WEB_DIR" "$WEB_REF")
 export SDES_TAG="$SVC_SHA-$WEB_SHA"
 PREV_TAG=$(current_tag || true)
 log "build $SDES_TAG (ก่อนหน้า: ${PREV_TAG:-ไม่มี})"
-dc --profile tools build api worker web migrate || { record "$SVC_REF" "$WEB_REF" "$SDES_TAG" failed; die "build ไม่ผ่าน — ระบบเดิมยังทำงาน"; }
+dc --profile tools build api worker web migrate backup || { record "$SVC_REF" "$WEB_REF" "$SDES_TAG" failed; die "build ไม่ผ่าน — ระบบเดิมยังทำงาน"; }
 # ไม่ใช้ BuildKit cache ของ image เก่าแล้ว — ลบ dangling layer กัน disk เต็ม
 docker image prune -f >/dev/null 2>&1 || true
 
