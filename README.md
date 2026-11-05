@@ -175,6 +175,24 @@ api และ worker เก็บ log ระดับ warning/error ลงตา
 - **Dependency gate:** CI รัน `pnpm audit:gate` — ล้มเมื่อพบช่องโหว่ระดับ critical ใน dependency ที่ใช้งานจริง ยกเว้นรายการที่อยู่ใน `security/audit-exceptions.json` (ต้องมีเหตุผลและวันหมดอายุ; หมดอายุแล้ว CI ล้ม)
 - **Authorization regression test** (`apps/api/test/authorization.e2e.ts`) ไล่ทุก route: route ใหม่ที่ลืม `@RequirePermission` จะทำให้ test ล้มพร้อมชื่อ endpoint
 
+## Production
+
+ทั้งชุดรันบนเครื่องเดียวด้วย `docker-compose.prod.yml` (Caddy เป็นทางเข้า HTTPS เดียว) — คู่มือเต็มอยู่ที่ `docs/deploy/` ของ repo วางแผน
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `Dockerfile` | image `runtime` ของ api/worker (`--build-arg APP=api\|worker`) และ `tools` (migrate/seed แบบ one-shot) |
+| `docker-compose.prod.yml`, `deploy/Caddyfile` | stack production: network ภายใน, `mem_limit`, healthcheck, log rotation, service `backup` |
+| `deploy/bootstrap.sh` | เตรียม Ubuntu 24.04: Docker, firewall 22/80/443, swap, ผู้ใช้ `deploy` |
+| `deploy/init-env.sh` | สร้าง `.env.production` ด้วยค่าสุ่ม (mode 600, ไม่เขียนทับ) |
+| `deploy/deploy.sh`, `deploy/rollback.sh` | deploy ref ที่ระบุ (build → สำรอง → migrate → สลับ → รอ health → `releases.log`) / ย้อนไป release ก่อนหน้า |
+| `deploy/restore.sh` | กู้ชุดสำรองรายวันหรือชุดก่อน deploy |
+| `deploy/check-budget.sh` | เพดาน RAM รวมจาก compose ≤ 80% ของเครื่อง |
+| `.github/workflows/deploy.yml` | deploy/rollback จากแท็บ Actions ผ่าน SSH key ที่สั่งได้เฉพาะ `deploy/ssh-deploy.sh` |
+
+เมื่อ `NODE_ENV=production` api/worker ตรวจค่าตั้งตอนเริ่ม (`@sdes/core` `checkProductionEnv`) — ขาด/สั้น/เป็นค่าตัวอย่าง = ไม่เริ่ม และ log บอกชื่อค่า (ไม่มีค่าใน log); `/health` แสดงเฉพาะชื่อบริการและ ok
+test ของสคริปต์: `pnpm test:deploy` (ต้องมี `sh` และ `openssl` — Linux/WSL/Git Bash)
+
 ## ทดสอบ
 
 ```bash
