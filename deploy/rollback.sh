@@ -26,7 +26,7 @@ done
 export SDES_TAG="$TARGET"
 REFS=$(awk -F'\t' -v t="$TARGET" '$4 == t { r = $2 "\t" $3 } END { print r }' "$RELEASES")
 log "rollback → $TARGET"
-dc up -d --no-build --remove-orphans
+dc up -d --no-build --remove-orphans || true
 if wait_healthy; then
   record "$(printf '%s' "$REFS" | cut -f1)" "$(printf '%s' "$REFS" | cut -f2)" "$TARGET" ok
   log "rollback สำเร็จ: $TARGET"

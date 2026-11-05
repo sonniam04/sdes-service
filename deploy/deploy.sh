@@ -52,7 +52,8 @@ if [ "$SEED" = 1 ]; then
 fi
 
 log "สลับไปเวอร์ชัน $SDES_TAG"
-dc up -d --no-build --remove-orphans
+# up ล้มได้เมื่อ api ไม่ healthy (caddy รอ api) — ให้ wait_healthy ตัดสิน เพื่อบันทึกผลและแสดง log เสมอ
+dc up -d --no-build --remove-orphans || true
 if wait_healthy; then
   record "$SVC_REF" "$WEB_REF" "$SDES_TAG" ok
   log "deploy สำเร็จ: $SDES_TAG"
