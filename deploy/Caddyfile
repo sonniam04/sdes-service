@@ -2,7 +2,7 @@
 # SDES_DOMAIN=localhost (ทดสอบบนเครื่อง dev) → Caddy ใช้ใบรับรองจาก CA ภายในของตัวเอง
 # http → https ทำให้อัตโนมัติ
 {
-	email {$ACME_EMAIL}
+	# ไม่ใส่ email ของ ACME — Let's Encrypt ไม่บังคับ และไม่ต้องเก็บข้อมูลส่วนตัวในค่าตั้ง
 	# ไม่ต้องการ admin API จากภายนอก (ฟังเฉพาะใน container)
 	admin localhost:2019
 }
@@ -33,6 +33,7 @@
 	}
 
 	header -Server
+	header -X-Powered-By
 	log {
 		output stdout
 		format console

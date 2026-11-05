@@ -24,9 +24,6 @@ export function loadConfig() {
       process.env.DATABASE_URL ?? `postgresql://sdes_app:${env("POSTGRES_APP_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,
       Number(env("DB_CONNECTION_LIMIT", "10")),
     ),
-    databaseOwnerUrl:
-      process.env.DATABASE_OWNER_URL ??
-      `postgresql://${env("POSTGRES_OWNER_USER", "sdes_owner")}:${env("POSTGRES_OWNER_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,
     /** prefix ของคิว BullMQ — test ใช้ค่าแยกเพื่อไม่ให้ worker ของ dev แย่งงาน */
     queuePrefix: env("QUEUE_PREFIX", "bull"),
     redisUrl: process.env.REDIS_URL ?? `redis://:${env("REDIS_PASSWORD")}@${hostPort("REDIS_HOST_PORT", "6379")}`,
