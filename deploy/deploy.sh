@@ -57,6 +57,11 @@ dc up -d --no-build --remove-orphans || true
 if wait_healthy; then
   record "$SVC_REF" "$WEB_REF" "$SDES_TAG" ok
   log "deploy สำเร็จ: $SDES_TAG"
+  # เก็บ image ของ release ที่สำเร็จ 3 ชุดล่าสุดไว้ rollback — ชุดอื่น (รวมที่ล้มเหลว) ลบทิ้งกัน disk เต็ม
+  KEEP_TAGS=$(awk -F'\t' '$5 == "ok" { print $4 }' "$RELEASES" | tail -n 3)
+  docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^sdes-(api|worker|web|backup|tools):[0-9a-f]{8}-[0-9a-f]{8}$' | while read -r img; do
+    printf '%s\n' "$KEEP_TAGS" | grep -qx "${img#*:}" || docker rmi "$img" >/dev/null 2>&1 || true
+  done
 else
   record "$SVC_REF" "$WEB_REF" "$SDES_TAG" failed
   dc logs --tail 30 api worker web >&2 || true
