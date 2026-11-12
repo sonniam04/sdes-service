@@ -1,0 +1,272 @@
+# Production stack (design D2, D4, D5) — แยกจาก docker-compose.yml ของ dev ทั้งไฟล์ เพื่อไม่ให้ ports: ของ dev หลุดมา
+#   docker compose -p sdes-prod --env-file /opt/sdes/.env.production -f docker-compose.prod.yml up -d
+# ค่าทั้งหมดมาจากไฟล์ค่าตั้งบนเครื่อง (deploy/init-env.sh) — ไม่มี secret ใน repo หรือ image
+# ทางเข้าเดียวคือ Caddy (80/443); service อื่นไม่มี ports: จึงเข้าจากภายนอกเครื่องไม่ได้
+name: sdes-prod
+
+x-restart: &restart
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://sdes_app:${POSTGRES_APP_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-sdes}
+  REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379
+  S3_ENDPOINT: http://seaweedfs:8333
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?}
+  S3_BUCKET: ${S3_BUCKET:-sdes-documents}
+  S3_REGION: ${S3_REGION:-ap-southeast-1}
+  # SeaweedFS ภายในเครื่องไม่รองรับ SSE-S3 — ข้อมูลอยู่ใน volume ของเครื่องที่เข้าจากภายนอกไม่ได้
+  S3_SSE: "false"
+  CLAMD_HOST: clamav
+  CLAMD_PORT: "3310"
+  JWT_SECRET: ${JWT_SECRET:?}
+  ERP_SECRET_KEY: ${ERP_SECRET_KEY:?}
+  COOKIE_SECURE: "true"
+
+networks:
+  # subnet ตายตัว เพื่อให้ TRUST_PROXY ชี้ IP ของ Caddy ได้ตัวเดียว (ไม่ใช่ทั้ง subnet)
+  sdes:
+    ipam:
+      config: [{ subnet: 172.30.0.0/24 }]
+
+services:
+  caddy:
+    <<: *restart
+    image: caddy:2.11.7-alpine
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      SDES_DOMAIN: ${SDES_DOMAIN:?}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    networks:
+      sdes: { ipv4_address: 172.30.0.10 }
+    depends_on:
+      api: { condition: service_healthy }
+      web: { condition: service_healthy }
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    <<: *restart
+    image: sdes-web:${SDES_TAG:-local}
+    build:
+      context: ${SDES_WEB_DIR:-../web}
+      args:
+        NEXT_PUBLIC_SDES_WS_URL: https://${SDES_DOMAIN:?}
+    networks: [sdes]
+    mem_limit: 384m
+    environment:
+      NODE_OPTIONS: --max-old-space-size=256
+
+  api:
+    <<: *restart
+    image: sdes-api:${SDES_TAG:-local}
+    build: { context: ., target: runtime, args: { APP: api } }
+    environment:
+      <<: *app-env
+      PORT: "3000"
+      # เชื่อ X-Forwarded-For จาก Caddy เท่านั้น (IP ตายตัวใน network sdes)
+      TRUST_PROXY: 172.30.0.10
+      RATE_LIMIT_AUTH: ${RATE_LIMIT_AUTH:-10}
+      RATE_LIMIT_UPLOAD: ${RATE_LIMIT_UPLOAD:-60}
+      NODE_OPTIONS: --max-old-space-size=384
+    networks: [sdes]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      seaweedfs: { condition: service_healthy }
+      clamav: { condition: service_healthy }
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    <<: *restart
+    image: sdes-worker:${SDES_TAG:-local}
+    build: { context: ., target: runtime, args: { APP: worker } }
+    environment:
+      <<: *app-env
+      # เท่าจำนวน OCPU (design D4)
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      EXTRACTION_PROVIDER: ${EXTRACTION_PROVIDER:-fake}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      EXTRACTION_MODEL: ${EXTRACTION_MODEL:-}
+      EXTRACTION_EFFORT: ${EXTRACTION_EFFORT:-low}
+      EXTRACTION_TIMEOUT_MS: ${EXTRACTION_TIMEOUT_MS:-120000}
+      EXTRACTION_FIXTURE_DIR: /fixtures
+      NODE_OPTIONS: --max-old-space-size=768
+    volumes:
+      # เฉลยของ fixture provider — ใช้เฉพาะการทดสอบ stack production บนเครื่อง dev (ค่าเริ่มต้นเป็นโฟลเดอร์ว่าง)
+      - ${EXTRACTION_FIXTURE_HOST_DIR:-./.fixtures}:/fixtures:ro
+    networks: [sdes]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      seaweedfs: { condition: service_healthy }
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/worker-ready && test $$(( $$(date +%s) - $$(date -r /tmp/worker-ready +%s) )) -lt 60"]
+      interval: 15s
+      timeout: 3s
+      retries: 8
+
+  # one-shot: deploy.sh รัน migrate ก่อน up และ seed ครั้งแรก — ไม่เริ่มกับ `up`
+  migrate:
+    image: sdes-tools:${SDES_TAG:-local}
+    build: { context: ., target: tools }
+    profiles: [tools]
+    environment:
+      DATABASE_OWNER_URL: postgresql://${POSTGRES_OWNER_USER:-sdes_owner}:${POSTGRES_OWNER_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-sdes}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      COMPANY_TAX_ID: ${COMPANY_TAX_ID:-}
+      COMPANY_NAME: ${COMPANY_NAME:-}
+    networks: [sdes]
+    depends_on:
+      postgres: { condition: service_healthy }
+    mem_limit: 512m
+
+  postgres:
+    <<: *restart
+    image: postgres:16.15-alpine3.23
+    # ค่าสำหรับ 1.5 GB / 2 OCPU บน SSD (design D5)
+    command:
+      - postgres
+      - -c
+      - shared_buffers=384MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=50
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - wal_compression=on
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sdes}
+      POSTGRES_USER: ${POSTGRES_OWNER_USER:-sdes_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro
+    networks: [sdes]
+    shm_size: 256m
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    <<: *restart
+    image: redis:7.4.12-alpine3.21
+    # BullMQ ต้องไม่ถูกลบ key (noeviction) — เต็มแล้วให้ error แทนการทิ้งงาน
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?}", "--maxmemory", "192mb", "--maxmemory-policy", "noeviction"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?}
+    volumes: [redisdata:/data]
+    networks: [sdes]
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  seaweedfs:
+    <<: *restart
+    image: chrislusf/seaweedfs:4.52
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        printf '{"identities":[{"name":"sdes","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
+        exec weed server -dir=/data -s3 -s3.port=8333 -s3.config=/tmp/s3.json -volume.max=0 -master.volumeSizeLimitMB=1024
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?}
+    volumes: [s3data:/data]
+    networks: [sdes]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && nc -z 127.0.0.1 8333"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  clamav:
+    <<: *restart
+    # image alpine ของ ClamAV มีเฉพาะ amd64 — ตัว debian มี arm64 (Ampere A1)
+    image: clamav/clamav:1.5.4-debian
+    # ไม่โหลด signature ชุดใหม่ซ้อนชุดเดิมในหน่วยความจำ ลด peak ตอนอัปเดต (design D4)
+    entrypoint: ["/bin/sh", "-c", "grep -q '^ConcurrentDatabaseReload' /etc/clamav/clamd.conf || echo 'ConcurrentDatabaseReload no' >> /etc/clamav/clamd.conf; exec /init"]
+    volumes: [clamdb:/var/lib/clamav]
+    networks: [sdes]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 180s
+
+  # สำรองทุกวัน 02:00 เวลาไทย เก็บ 7 ชุด (design D7) — ไฟล์อยู่ที่ /opt/sdes/backups บนเครื่อง ไม่ใช่ใน volume ข้อมูล
+  backup:
+    <<: *restart
+    image: sdes-backup:${SDES_TAG:-local}
+    build: deploy/backup
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_OWNER_USER:-sdes_owner}
+      PGPASSWORD: ${POSTGRES_OWNER_PASSWORD:?}
+      PGDATABASE: ${POSTGRES_DB:-sdes}
+      S3_BUCKET: ${S3_BUCKET:-sdes-documents}
+      BACKUP_KEEP: "7"
+      # rclone remote "src" = SeaweedFS ภายใน, "offsite" = Object Storage (ไม่บังคับ)
+      RCLONE_CONFIG_SRC_TYPE: s3
+      RCLONE_CONFIG_SRC_PROVIDER: SeaweedFS
+      RCLONE_CONFIG_SRC_ENDPOINT: http://seaweedfs:8333
+      RCLONE_CONFIG_SRC_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?}
+      RCLONE_CONFIG_SRC_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      RCLONE_CONFIG_OFFSITE_TYPE: s3
+      RCLONE_CONFIG_OFFSITE_PROVIDER: Other
+      RCLONE_CONFIG_OFFSITE_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY:-}
+      RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_KEY:-}
+    volumes:
+      - ${SDES_BACKUP_DIR:-/opt/sdes/backups}:/backups
+    networks: [sdes]
+    depends_on:
+      postgres: { condition: service_healthy }
+      seaweedfs: { condition: service_healthy }
+    mem_limit: 256m
+
+volumes:
+  caddydata:
+  caddyconfig:
+  pgdata:
+  redisdata:
+  s3data:
+  clamdb:

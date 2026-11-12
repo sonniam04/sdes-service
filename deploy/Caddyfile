@@ -1,0 +1,41 @@
+# ทางเข้าเดียวของ production (design D2) — HTTPS อัตโนมัติจาก Let's Encrypt ด้วยชื่อใน SDES_DOMAIN
+# SDES_DOMAIN=localhost (ทดสอบบนเครื่อง dev) → Caddy ใช้ใบรับรองจาก CA ภายในของตัวเอง
+# http → https ทำให้อัตโนมัติ
+{
+	# ไม่ใส่ email ของ ACME — Let's Encrypt ไม่บังคับ และไม่ต้องเก็บข้อมูลส่วนตัวในค่าตั้ง
+	# ไม่ต้องการ admin API จากภายนอก (ฟังเฉพาะใน container)
+	admin localhost:2019
+}
+
+{$SDES_DOMAIN} {
+	encode zstd gzip
+
+	# Caddy ไม่เชื่อ X-Forwarded-For ที่ผู้ใช้ส่งมา (ไม่ได้ตั้ง trusted_proxies) และตั้งค่าเป็น IP จริงเอง
+	# api เชื่อ header นี้เฉพาะจาก IP ของ Caddy (TRUST_PROXY) — spec platform-security "Client IP behind a reverse proxy"
+	handle_path /api/* {
+		reverse_proxy api:3000 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle /auth/* {
+		reverse_proxy api:3000 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	# socket.io (path /ws) — สถานะเอกสารแบบ real-time
+	handle /ws/* {
+		reverse_proxy api:3000 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header -Server
+	header -X-Powered-By
+	log {
+		output stdout
+		format console
+	}
+}

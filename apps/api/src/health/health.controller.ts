@@ -1,4 +1,4 @@
-import { Controller, Get, HttpStatus, Inject, Res } from "@nestjs/common";
+import { Controller, Get, HttpStatus, Inject, Logger, Res } from "@nestjs/common";
 import { Public } from "../auth/decorators.js";
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
@@ -10,6 +10,8 @@ type CheckResult = { name: string; ok: boolean; error?: string };
 @Public()
 @Controller("health")
 export class HealthController {
+  private readonly log = new Logger(HealthController.name);
+
   constructor(@Inject(HEALTH_CHECKS) private readonly checks: HealthCheck[]) {}
 
   @Get()
@@ -29,6 +31,11 @@ export class HealthController {
     );
     const ok = results.every((r) => r.ok);
     res.status(ok ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE);
+    // production: ข้อความ error อาจมีชื่อ host ภายใน — คำตอบมีเฉพาะชื่อ + ok ส่วนข้อความเต็มไปที่ System logs (design D9)
+    if (process.env.NODE_ENV === "production") {
+      for (const r of results) if (!r.ok) this.log.warn(`health: ${r.name} ไม่พร้อม — ${r.error}`);
+      return { status: ok ? "ok" : "degraded", checks: results.map(({ name, ok }) => ({ name, ok })) };
+    }
     return { status: ok ? "ok" : "degraded", checks: results };
   }
 }

@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -24,6 +25,9 @@ export type IncomingFile = {
  * ไฟล์ที่เกิน 20 MB ถูกตัดและทำเครื่องหมาย แต่ไฟล์อื่นในชุดยังรับต่อได้
  */
 export async function receiveFiles(req: Request): Promise<{ files: IncomingFile[]; dir: string; tooMany: boolean }> {
+  // ไม่ใช่ multipart = คำขอผิดรูปแบบ (400) ไม่ใช่ข้อผิดพลาดของระบบ
+  if (!/^multipart\/form-data/i.test(req.headers["content-type"] ?? ""))
+    throw new BadRequestException({ code: "NOT_MULTIPART", message: "ต้องส่งไฟล์แบบ multipart/form-data ในช่อง files" });
   const dir = await mkdtemp(join(tmpdir(), "sdes-upload-"));
   const files: IncomingFile[] = [];
   let tooMany = false;

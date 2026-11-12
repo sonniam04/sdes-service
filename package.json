@@ -10,7 +10,10 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "build": "pnpm -r build",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "audit:gate": "node scripts/audit-gate.mjs",
+    "test:scripts": "node --test scripts/audit-gate.test.mjs",
+    "test:deploy": "pnpm --filter @sdes/core build && node --test deploy/test/init-env.test.mjs deploy/test/init-env-config.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

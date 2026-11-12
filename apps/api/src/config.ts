@@ -1,10 +1,11 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { withConnectionLimit } from "@sdes/db";
 
 // dev: อ่าน Service/.env และชี้ไปยัง port ฝั่งเครื่องของ docker compose
 // ใน container ค่าเหล่านี้มาจาก environment ของ compose อยู่แล้ว
 const envFile = resolve(__dirname, "../../../.env");
-if (!process.env.DATABASE_URL && existsSync(envFile)) process.loadEnvFile(envFile);
+if (process.env.NODE_ENV !== "production" && !process.env.DATABASE_URL && existsSync(envFile)) process.loadEnvFile(envFile);
 
 const env = (k: string, fallback?: string) => {
   const v = process.env[k] ?? fallback;
@@ -18,10 +19,11 @@ export function loadConfig() {
   const db = env("POSTGRES_DB", "sdes");
   return {
     port: Number(env("PORT", "3000")),
-    databaseUrl: process.env.DATABASE_URL ?? `postgresql://sdes_app:${env("POSTGRES_APP_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,
-    databaseOwnerUrl:
-      process.env.DATABASE_OWNER_URL ??
-      `postgresql://${env("POSTGRES_OWNER_USER", "sdes_owner")}:${env("POSTGRES_OWNER_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,
+    // pool 10 ต่อ client (design D5)
+    databaseUrl: withConnectionLimit(
+      process.env.DATABASE_URL ?? `postgresql://sdes_app:${env("POSTGRES_APP_PASSWORD")}@${hostPort("POSTGRES_HOST_PORT", "5433")}/${db}`,
+      Number(env("DB_CONNECTION_LIMIT", "10")),
+    ),
     /** prefix ของคิว BullMQ — test ใช้ค่าแยกเพื่อไม่ให้ worker ของ dev แย่งงาน */
     queuePrefix: env("QUEUE_PREFIX", "bull"),
     redisUrl: process.env.REDIS_URL ?? `redis://:${env("REDIS_PASSWORD")}@${hostPort("REDIS_HOST_PORT", "6379")}`,
@@ -45,6 +47,13 @@ export function loadConfig() {
       maxFailedLogins: 5,
       lockMinutes: 15,
     },
+    /** spec platform-security "Rate limiting" — ต่อนาที; ปรับได้สำหรับชุดทดสอบที่ล็อกอินถี่จาก IP เดียว */
+    rateLimit: {
+      authPerMinute: Number(env("RATE_LIMIT_AUTH", "10")),
+      uploadPerMinute: Number(env("RATE_LIMIT_UPLOAD", "60")),
+    },
+    /** ค่า trust proxy ของ Express (เช่น "loopback, uniquelocal") เพื่อให้ได้ IP จริงของผู้ใช้หลัง reverse proxy */
+    trustProxy: process.env.TRUST_PROXY || null,
   };
 }
 

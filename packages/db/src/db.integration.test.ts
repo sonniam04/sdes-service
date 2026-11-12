@@ -79,6 +79,108 @@ describe.skipIf(!hasDatabase)("database (integration)", () => {
       expect(r.rows[0].indexdef).toMatch(/WHERE \(status <> 'FAILED'/);
     });
 
+    describe("เลขที่ใบแจ้งหนี้ของผู้ขายเดียวกันยืนยันซ้ำไม่ได้ (phase 2 task 2.1)", () => {
+      /** สร้างผู้ใช้ ผู้ขาย และเอกสารตามสถานะที่ให้ ภายใน transaction ที่ rollback เสมอ */
+      async function insertDocs(statuses: string[]) {
+        await pg.query("BEGIN");
+        try {
+          const u = await pg.query(
+            "INSERT INTO users (id, email, display_name, updated_at) VALUES (gen_random_uuid(), $1, 'test', now()) RETURNING id",
+            [`dup-${randomUUID()}@test.local`],
+          );
+          const v = await pg.query(
+            "INSERT INTO vendors (id, tax_id, branch_code, name) VALUES (gen_random_uuid(), '0105536000011', $1, 'ผู้ขายทดสอบ') RETURNING id",
+            [String(Math.floor(Math.random() * 99999)).padStart(5, "0")],
+          );
+          for (const status of statuses) {
+            await pg.query(
+              `INSERT INTO documents (id, status, sha256, file_name, mime_type, size_bytes, storage_key, uploaded_by, vendor_id, invoice_no, updated_at)
+               VALUES (gen_random_uuid(), $1, $2, 'a.pdf', 'application/pdf', 1, $3, $4, $5, 'INV-DUP-1', now())`,
+              [status, randomUUID().replace(/-/g, "").padEnd(64, "0"), `test/${randomUUID()}`, u.rows[0].id, v.rows[0].id],
+            );
+          }
+        } finally {
+          await pg.query("ROLLBACK");
+        }
+      }
+
+      it("migration เพิ่ม column ใหม่ครบ", async () => {
+        const r = await pg.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_name = 'documents' AND column_name = ANY($1)",
+          [["data", "field_meta", "validation_issues", "vendor_tax_id", "vendor_branch", "vendor_name", "buyer_branch", "verified_by", "verified_at"]],
+        );
+        expect(r.rowCount).toBe(9);
+      });
+
+      it("VERIFIED สองฉบับเลขเดียวกันถูกปฏิเสธ", async () => {
+        await expect(insertDocs(["VERIFIED", "PENDING_APPROVAL"])).rejects.toThrow(/documents_vendor_invoice_confirmed_key/);
+      });
+
+      it("ฉบับที่ถูกปฏิเสธหรือยังไม่ยืนยันซ้ำได้", async () => {
+        await expect(insertDocs(["VERIFIED", "REJECTED", "REJECTED", "EXTRACTED"])).resolves.toBeUndefined();
+      });
+    });
+
+    describe("การเชื่อมต่อ ERP (phase 3 task 2.1)", () => {
+      it("migration เพิ่ม column ของการส่ง ERP ครบ", async () => {
+        const r = await pg.query(
+          `SELECT table_name || '.' || column_name AS c FROM information_schema.columns
+           WHERE (table_name, column_name) IN (('documents','erp_transaction_id'),('documents','synced_at'),('documents','sync_error'),
+             ('vendors','erp_partner_id'),('erp_sync_attempts','reused'),('erp_connections','secret_ciphertext'),('erp_connections','auto_sync'))`,
+        );
+        expect(r.rowCount).toBe(7);
+      });
+
+      it("erp_connections มีได้แถวเดียว (id = 1)", async () => {
+        await pg.query("BEGIN");
+        try {
+          await expect(
+            pg.query("INSERT INTO erp_connections (id, adapter, url, updated_at) VALUES (2, 'odoo', 'http://x', now())"),
+          ).rejects.toThrow(/erp_connections_single_row/);
+        } finally {
+          await pg.query("ROLLBACK");
+        }
+      });
+
+      it("sdes_app อ่าน/เขียนการเชื่อมต่อได้", async () => {
+        const r = await asApp(
+          "INSERT INTO erp_connections (id, adapter, url, updated_at) VALUES (1, 'odoo', 'http://x', now()) ON CONFLICT (id) DO UPDATE SET url = EXCLUDED.url RETURNING id",
+        );
+        expect(r.rows[0].id).toBe(1);
+      });
+    });
+
+    describe("API keys และ system logs (task 1.2 ของ complete-missing-features)", () => {
+      it("migration เพิ่มตารางและ column ครบ", async () => {
+        const r = await pg.query(
+          `SELECT table_name || '.' || column_name AS c FROM information_schema.columns
+           WHERE (table_name, column_name) IN (('users','kind'),('api_keys','key_hash'),('api_keys','prefix'),('api_keys','scopes'),
+             ('api_keys','expires_at'),('api_keys','last_used_at'),('api_keys','revoked_at'),('api_keys','service_user_id'),
+             ('system_logs','service'),('system_logs','level'),('system_logs','context'),('system_logs','message'),('system_logs','details'))`,
+        );
+        expect(r.rowCount).toBe(13);
+      });
+
+      it("ผู้ใช้เดิมทุกคนเป็น HUMAN", async () => {
+        const r = await pg.query("SELECT count(*)::int AS n FROM users WHERE kind <> 'HUMAN' AND id NOT IN (SELECT service_user_id FROM api_keys)");
+        expect(r.rows[0].n).toBe(0);
+        const d = await pg.query("SELECT column_default FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'kind'");
+        expect(d.rows[0].column_default).toContain("HUMAN");
+      });
+
+      it("sdes_app เพิ่ม/อ่าน/ลบ system_logs ได้ แต่แก้ไม่ได้", async () => {
+        const ins = await asApp("INSERT INTO system_logs (service, level, message) VALUES ('api', 'error', 'x') RETURNING id");
+        expect(ins.rowCount).toBe(1);
+        expect((await asApp("DELETE FROM system_logs WHERE created_at < now() - interval '30 days'")).command).toBe("DELETE");
+        await expect(asApp("UPDATE system_logs SET message = 'y'")).rejects.toThrow(/permission denied/);
+      });
+
+      it("prefix ของ API key ซ้ำไม่ได้", async () => {
+        const r = await pg.query("SELECT indexdef FROM pg_indexes WHERE tablename = 'api_keys' AND indexdef ILIKE '%UNIQUE%prefix%'");
+        expect(r.rowCount).toBe(1);
+      });
+    });
+
     it("sdes_app แตะตาราง _prisma_migrations ไม่ได้", async () => {
       await expect(asApp("SELECT 1 FROM _prisma_migrations LIMIT 1")).rejects.toThrow(/permission denied/);
     });
@@ -112,6 +214,31 @@ describe.skipIf(!hasDatabase)("database (integration)", () => {
       } finally {
         await prisma.setting.update({ where: { key: "risk.confidence_threshold" }, data: { value: 0.85 } });
       }
+    });
+
+    it("seed Tax ID/ชื่อบริษัทจาก env โดยไม่ทับค่าที่ Admin แก้แล้ว (phase 2 task 2.2)", async () => {
+      const key = "company.tax_id";
+      const before = await prisma.setting.findUnique({ where: { key } });
+      await seed(prisma, { adminEmail: `seed-${randomUUID()}@test.local`, adminPassword: "temporary-pass-123" });
+      await prisma.setting.update({ where: { key }, data: { value: "0994000165617" } });
+      try {
+        await seed(prisma, {
+          adminEmail: `seed-${randomUUID()}@test.local`,
+          adminPassword: "temporary-pass-123",
+          companyTaxId: "0105536000011",
+          companyName: "บริษัทอื่น",
+        });
+        expect((await prisma.setting.findUnique({ where: { key } }))?.value).toBe("0994000165617");
+        expect(await prisma.setting.findUnique({ where: { key: "company.name" } })).not.toBeNull();
+      } finally {
+        await prisma.setting.update({ where: { key }, data: { value: (before?.value ?? null) as never } });
+      }
+    });
+
+    it("ปฏิเสธ COMPANY_TAX_ID ที่ไม่ถูกต้อง", async () => {
+      await expect(
+        seed(prisma, { adminEmail: "x@test.local", adminPassword: "temporary-pass-123", companyTaxId: "0105536000014" }),
+      ).rejects.toThrow(/COMPANY_TAX_ID/);
     });
 
     it("ปฏิเสธรหัสผ่านสั้นเกิน", async () => {

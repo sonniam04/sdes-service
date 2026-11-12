@@ -2,7 +2,13 @@ import { createParamDecorator, SetMetadata, type ExecutionContext } from "@nestj
 import type { Action, Role } from "@sdes/core";
 
 /** ผู้ใช้ที่ล็อกอินแล้ว (มาจาก access token) */
-export type Principal = { userId: string; roles: Role[]; mustChangePassword: boolean };
+export type Principal = {
+  userId: string;
+  roles: Role[];
+  mustChangePassword: boolean;
+  /** มีเมื่อเรียกด้วย API key: สิทธิ์ตามขอบเขตของ key ใช้แทน roles (spec api-keys) */
+  apiKey?: { id: string; permissions: readonly Action[] };
+};
 
 export const IS_PUBLIC = "auth:public";
 export const ALLOW_PASSWORD_CHANGE = "auth:allow-password-change";

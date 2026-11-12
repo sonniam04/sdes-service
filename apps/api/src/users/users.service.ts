@@ -28,7 +28,8 @@ export class UsersService {
   ) {}
 
   async list() {
-    const users = await this.prisma.user.findMany({ include: { roles: true }, orderBy: { createdAt: "asc" } });
+    // บัญชีของ API key จัดการที่หน้า API keys ไม่ใช่ที่นี่ (spec user-access "Service accounts")
+    const users = await this.prisma.user.findMany({ where: { kind: "HUMAN" }, include: { roles: true }, orderBy: { createdAt: "asc" } });
     return users.map(view);
   }
 
@@ -92,7 +93,7 @@ export class UsersService {
 
   private async load(tx: Tx, id: string) {
     const user = await tx.user.findUnique({ where: { id }, include: { roles: true } });
-    if (!user) throw new NotFoundException("ไม่พบผู้ใช้");
+    if (!user || user.kind !== "HUMAN") throw new NotFoundException("ไม่พบผู้ใช้");
     return user;
   }
 

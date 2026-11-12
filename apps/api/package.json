@@ -18,6 +18,7 @@
     "@nestjs/platform-express": "^12.3.2",
     "@nestjs/platform-socket.io": "^12.3.2",
     "@nestjs/swagger": "^12.0.5",
+    "@nestjs/throttler": "^6.7.1",
     "@nestjs/websockets": "^12.3.2",
     "@sdes/core": "workspace:*",
     "@sdes/db": "workspace:*",
@@ -27,13 +28,17 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "cookie-parser": "^1.4.7",
+    "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "socket.io": "^4.8.4"
+    "sharp": "^0.34.5",
+    "socket.io": "^4.8.4",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@nestjs/testing": "^12.3.2",
     "@swc-node/register": "^1.12.1",
     "@swc/core": "^1.16.20",

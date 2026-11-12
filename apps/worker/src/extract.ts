@@ -1,23 +1,66 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { Queue, Worker, type Job } from "bullmq";
+import { Queue, UnrecoverableError, Worker, type Job } from "bullmq";
 import Redis from "ioredis";
 import {
   EXTRACT_QUEUE,
+  applyValidationPenalty,
+  buildFieldMeta,
   extractJobOptions,
   FakeExtractionProvider,
+  overallConfidence,
   STATUS_CHANNEL,
+  toDocumentData,
+  validateDocument,
   type ExtractionProvider,
   type ExtractJob,
   type StatusEvent,
 } from "@sdes/core";
-import { Prisma, StaleDocumentError, transitionDocument, type PrismaClient } from "@sdes/db";
+import {
+  Prisma,
+  StaleDocumentError,
+  findDuplicateInvoice,
+  loadReviewSettings,
+  projectDocumentData,
+  transitionDocument,
+  type PrismaClient,
+} from "@sdes/db";
 import type { WorkerConfig } from "./config.js";
+import { ClaudeExtractionProvider } from "./providers/claude.js";
+import { classifyError } from "./providers/errors.js";
+import { FixtureExtractionProvider } from "./providers/fixture.js";
+import { GeminiExtractionProvider } from "./providers/gemini.js";
+import { GoogleGenAI } from "@google/genai";
+
+/** รุ่นเริ่มต้นเมื่อไม่ได้ตั้ง EXTRACTION_MODEL */
+export const DEFAULT_MODELS = { claude: "claude-opus-5-5", gemini: "gemini-3.8-flash" } as const;
 
 const SYSTEM = { kind: "system" } as const;
 
-export function createProvider(name: string): ExtractionProvider {
-  if (name === "fake") return new FakeExtractionProvider();
-  throw new Error(`ไม่รู้จัก EXTRACTION_PROVIDER=${name}`);
+/** เลือก provider ตาม EXTRACTION_PROVIDER (design D1) — ตั้งค่าไม่ครบให้หยุดตั้งแต่เริ่ม worker */
+export function createProvider(name: string, opts: Partial<WorkerConfig["extraction"]> = {}): ExtractionProvider {
+  switch (name) {
+    case "fake":
+      return new FakeExtractionProvider();
+    case "fixture":
+      if (!opts.fixtureDir) throw new Error("EXTRACTION_PROVIDER=fixture ต้องตั้ง EXTRACTION_FIXTURE_DIR");
+      return new FixtureExtractionProvider(opts.fixtureDir);
+    case "claude":
+      if (!opts.anthropicApiKey) throw new Error("EXTRACTION_PROVIDER=claude ต้องตั้ง ANTHROPIC_API_KEY ใน .env");
+      return new ClaudeExtractionProvider(new Anthropic({ apiKey: opts.anthropicApiKey }), {
+        model: opts.model ?? DEFAULT_MODELS.claude,
+        effort: opts.effort ?? "low",
+        timeoutMs: opts.timeoutMs ?? 120_000,
+      });
+    case "gemini":
+      if (!opts.geminiApiKey) throw new Error("EXTRACTION_PROVIDER=gemini ต้องตั้ง GEMINI_API_KEY ใน .env");
+      return new GeminiExtractionProvider(new GoogleGenAI({ apiKey: opts.geminiApiKey }), {
+        model: opts.model ?? DEFAULT_MODELS.gemini,
+        timeoutMs: opts.timeoutMs ?? 120_000,
+      });
+    default:
+      throw new Error(`ไม่รู้จัก EXTRACTION_PROVIDER=${name} (ใช้ได้: fake, fixture, claude, gemini)`);
+  }
 }
 
 export type Deps = {
@@ -42,7 +85,10 @@ async function publish(redis: Redis, d: { id: string; docNo: string; status: str
   await redis.publish(STATUS_CHANNEL, JSON.stringify(e)).catch(() => {});
 }
 
-/** อ่านเอกสารหนึ่งฉบับ: UPLOADED → PROCESSING → EXTRACTED (ล้มเหลวครบจำนวน retry → FAILED) */
+/**
+ * อ่านเอกสารหนึ่งฉบับ: UPLOADED → PROCESSING → EXTRACTED
+ * ล้มเหลวชั่วคราว → throw ให้ BullMQ retry; ล้มเหลวถาวร → UnrecoverableError (FAILED ทันที)
+ */
 export async function processExtract(deps: Deps, documentId: string) {
   const { prisma, redis, provider, s3, cfg } = deps;
   const doc = await prisma.document.findUnique({ where: { id: documentId } });
@@ -62,11 +108,41 @@ export async function processExtract(deps: Deps, documentId: string) {
     return { skipped: doc.status };
   }
 
-  const obj = await s3.send(new GetObjectCommand({ Bucket: cfg.s3.bucket, Key: current.storageKey }));
-  const file = Buffer.from(await obj.Body!.transformToByteArray());
-  const result = await provider.extract({ file, mime: current.mimeType });
+  const started = Date.now();
+  let result;
+  try {
+    const obj = await s3.send(new GetObjectCommand({ Bucket: cfg.s3.bucket, Key: current.storageKey }));
+    const file = Buffer.from(await obj.Body!.transformToByteArray());
+    result = await provider.extract({ file, mime: current.mimeType });
+  } catch (e) {
+    const err = classifyError(e);
+    // เก็บรอบที่ล้มเหลวไว้ตรวจย้อนหลัง (spec "Extraction provenance")
+    await prisma.documentExtraction.create({
+      data: {
+        documentId,
+        provider: provider.name,
+        modelVersion: "-",
+        confidence: new Prisma.Decimal(0),
+        raw: { error: err.message, permanent: err.permanent } as Prisma.InputJsonValue,
+        durationMs: Date.now() - started,
+        error: err.message.slice(0, 500),
+      },
+    });
+    throw err.permanent ? new UnrecoverableError(err.message) : err;
+  }
+  const durationMs = Date.now() - started;
 
   const done = await prisma.$transaction(async (tx) => {
+    const settings = await loadReviewSettings(tx);
+    const data = toDocumentData(result);
+    const issues = validateDocument(data, {
+      companyTaxId: settings.companyTaxId,
+      uploadedAt: current.createdAt,
+      duplicateDocNo: await findDuplicateInvoice(tx, data, documentId),
+    });
+    // ความมั่นใจที่โมเดลรายงานเองถูกลดลงตามผลกฎตรวจ (design D3)
+    const penalized = applyValidationPenalty(result, issues);
+    const confidence = new Prisma.Decimal(overallConfidence(penalized));
     await tx.documentExtraction.create({
       data: {
         documentId,
@@ -75,11 +151,20 @@ export async function processExtract(deps: Deps, documentId: string) {
         confidence: new Prisma.Decimal(result.confidence),
         raw: result.raw as Prisma.InputJsonValue,
         items: result.items as unknown as Prisma.InputJsonValue,
+        durationMs,
       },
     });
     await tx.document.update({
       where: { id: documentId },
-      data: { provider: result.provider, modelVersion: result.modelVersion, confidence: new Prisma.Decimal(result.confidence) },
+      data: {
+        provider: result.provider,
+        modelVersion: result.modelVersion,
+        confidence,
+        data: data as unknown as Prisma.InputJsonValue,
+        fieldMeta: buildFieldMeta(penalized) as unknown as Prisma.InputJsonValue,
+        validationIssues: issues as unknown as Prisma.InputJsonValue,
+        ...projectDocumentData(data),
+      },
     });
     return transitionDocument(tx, { documentId, to: "EXTRACTED", actor: SYSTEM });
   });
@@ -104,7 +189,9 @@ export function startExtractWorker(deps: Deps, connection: Redis) {
     concurrency: deps.cfg.concurrency,
   });
   worker.on("failed", (job, err) => {
-    if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) void markFailed(deps, job.data.documentId, err.message);
+    // UnrecoverableError = ล้มเหลวถาวร ไม่ต้องรอให้ครบจำนวนครั้ง
+    const finished = err instanceof UnrecoverableError || err.name === "UnrecoverableError" || (job?.attemptsMade ?? 0) >= (job?.opts.attempts ?? 1);
+    if (job && finished) void markFailed(deps, job.data.documentId, err.message);
   });
   return worker;
 }

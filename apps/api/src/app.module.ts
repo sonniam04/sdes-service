@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
+import { ThrottlerModule } from "@nestjs/throttler";
+import Redis from "ioredis";
+import { AppThrottlerGuard, RedisThrottlerStorage, THROTTLE_AUTH, THROTTLE_UPLOAD } from "./security/throttle.js";
 import { APP_CONFIG, type AppConfig } from "./config.js";
 import { ConfigModule } from "./config.module.js";
 import { PrismaModule } from "./prisma.js";
@@ -20,11 +23,35 @@ import { QueueService } from "./documents/queue.service.js";
 import { ScannerService } from "./documents/scanner.service.js";
 import { StatusGateway } from "./documents/status.gateway.js";
 import { StorageService } from "./documents/storage.service.js";
+import { ReviewService } from "./documents/review.service.js";
+import { SettingsController } from "./settings/settings.controller.js";
+import { ErpController } from "./erp/erp.controller.js";
+import { OpsController } from "./erp/ops.controller.js";
+import { OpsService } from "./erp/ops.service.js";
+import { DashboardController } from "./dashboard/dashboard.controller.js";
+import { DASHBOARD_CLOCK, DashboardService } from "./dashboard/dashboard.service.js";
+import { ErpService } from "./erp/erp.service.js";
+import { ApiKeysController } from "./api-keys/api-keys.controller.js";
+import { ApiKeysService } from "./api-keys/api-keys.service.js";
+import { SystemLogsController } from "./system-logs/system-logs.controller.js";
+import { VendorsController } from "./vendors/vendors.controller.js";
+import { ReportMetrics } from "./reports/report-metrics.js";
+import { ReportsController } from "./reports/reports.controller.js";
 
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
+    ThrottlerModule.forRootAsync({
+      inject: [APP_CONFIG],
+      useFactory: (cfg: AppConfig) => ({
+        throttlers: [
+          { name: THROTTLE_AUTH, ttl: 60_000, limit: cfg.rateLimit.authPerMinute },
+          { name: THROTTLE_UPLOAD, ttl: 60_000, limit: cfg.rateLimit.uploadPerMinute },
+        ],
+        storage: new RedisThrottlerStorage(new Redis(cfg.redisUrl)),
+      }),
+    }),
     JwtModule.registerAsync({
       inject: [APP_CONFIG],
       useFactory: (cfg: AppConfig) => ({
@@ -34,16 +61,24 @@ import { StorageService } from "./documents/storage.service.js";
       }),
     }),
   ],
-  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController],
+  controllers: [HealthController, AuthController, UsersController, AuditController, DocumentsController, SettingsController, ErpController, OpsController, ApiKeysController, SystemLogsController, VendorsController, ReportsController, DashboardController],
   providers: [
     { provide: HEALTH_CHECKS, useFactory: (cfg: AppConfig) => buildHealthChecks(cfg), inject: [APP_CONFIG] },
     AuditService,
+    ReviewService,
+    ErpService,
+    ApiKeysService,
+    AppThrottlerGuard,
     TokenService,
     AuthService,
     UsersService,
     ScannerService,
     StorageService,
     QueueService,
+    ReportMetrics,
+    OpsService,
+    DashboardService,
+    { provide: DASHBOARD_CLOCK, useValue: () => new Date() },
     DocumentsService,
     StatusGateway,
     // ลำดับสำคัญ: ยืนยันตัวตนก่อน แล้วจึงตรวจสิทธิ์

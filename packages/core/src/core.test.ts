@@ -3,6 +3,7 @@ import {
   ACTIONS,
   DOCUMENT_STATUSES,
   FakeExtractionProvider,
+  HEADER_FIELDS,
   PERMISSIONS,
   REDACTED,
   ROLES,
@@ -11,6 +12,7 @@ import {
   assertTransition,
   can,
   canTransition,
+  parseExtractionResult,
   redact,
   type Action,
   type Actor,
@@ -81,7 +83,7 @@ describe("state machine (spec document-lifecycle)", () => {
 
 describe("permission matrix (spec user-access)", () => {
   const expected: Record<Role, Action[]> = {
-    AP_CLERK: ["document.upload", "document.view", "document.view_file", "document.edit", "document.retry", "document.verify"],
+    AP_CLERK: ["document.upload", "document.view", "document.view_file", "document.edit", "document.retry", "document.verify", "vendor.view", "dashboard.view"],
     AP_LEAD: [
       "document.upload",
       "document.view",
@@ -90,9 +92,11 @@ describe("permission matrix (spec user-access)", () => {
       "document.retry",
       "document.verify",
       "document.approve",
+      "vendor.view",
+      "dashboard.view",
     ],
-    FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all"],
-    SYS_ADMIN: ["audit.view_all", "user.manage", "settings.manage", "erp.configure", "apikey.manage", "sync.resend"],
+    FINANCE_EXEC: ["document.view", "document.view_file", "report.view", "audit.view_all", "ops.view", "dashboard.view"],
+    SYS_ADMIN: ["audit.view_all", "user.manage", "settings.manage", "erp.configure", "apikey.manage", "sync.resend", "ops.view", "logs.view", "dashboard.view"],
   };
 
   // ตาราง role × action ครบทุกช่อง
@@ -162,5 +166,13 @@ describe("redact (spec audit-trail)", () => {
   it("ไม่แตะยอดเงินและค่าที่ไม่ใช่ string", () => {
     const input = { grand_total: "48,150.00", qty: 6, ok: true, at: new Date(0), nothing: null };
     expect(redact(input)).toEqual(input);
+  });
+});
+
+describe("FakeExtractionProvider", () => {
+  it("FakeExtractionProvider คืนผลที่ผ่าน schema และมี field ใหม่ครบ", async () => {
+    const r = await new FakeExtractionProvider().extract();
+    expect(() => parseExtractionResult(r)).not.toThrow();
+    expect(Object.keys(r.header)).toEqual(HEADER_FIELDS);
   });
 });

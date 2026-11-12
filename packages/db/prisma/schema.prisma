@@ -4,6 +4,8 @@
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/client"
+  // native = เครื่อง dev; musl = image node:22-alpine บน x86-64 (dev) และ ARM64 (Oracle Ampere A1) — design D3
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {
@@ -37,6 +39,12 @@ enum ActorType {
   SYSTEM
 }
 
+/// HUMAN = คนที่ล็อกอินด้วยรหัสผ่าน, SERVICE = บัญชีของ API key (ล็อกอินไม่ได้)
+enum UserKind {
+  HUMAN
+  SERVICE
+}
+
 model User {
   id                 String    @id @default(uuid()) @db.Uuid
   email              String    @unique
@@ -44,6 +52,7 @@ model User {
   passwordHash       String?   @map("password_hash")
   /// สำหรับ OIDC/SSO ภายหลัง (design D5)
   externalSubject    String?   @unique @map("external_subject")
+  kind               UserKind  @default(HUMAN)
   isActive           Boolean   @default(true) @map("is_active")
   mustChangePassword Boolean   @default(true) @map("must_change_password")
   failedLoginCount   Int       @default(0) @map("failed_login_count")
@@ -51,9 +60,11 @@ model User {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  roles         UserRole[]
-  refreshTokens RefreshToken[]
-  documents     Document[]     @relation("UploadedBy")
+  roles             UserRole[]
+  refreshTokens     RefreshToken[]
+  documents         Document[]     @relation("UploadedBy")
+  verifiedDocuments Document[]     @relation("VerifiedBy")
+  apiKey            ApiKey?        @relation("ApiKeyServiceUser")
 
   @@map("users")
 }
@@ -68,28 +79,30 @@ model UserRole {
 }
 
 model RefreshToken {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @map("user_id") @db.Uuid
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
   /// เก็บเฉพาะ hash ของ token
-  tokenHash  String    @unique @map("token_hash")
-  familyId   String    @map("family_id") @db.Uuid
-  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
-  usedAt     DateTime? @map("used_at") @db.Timestamptz(6)
-  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  user       User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tokenHash String    @unique @map("token_hash")
+  familyId  String    @map("family_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([familyId])
   @@map("refresh_tokens")
 }
 
 model Vendor {
-  id         String     @id @default(uuid()) @db.Uuid
-  taxId      String     @map("tax_id") @db.Char(13)
-  branchCode String     @default("00000") @map("branch_code") @db.Char(5)
-  name       String
-  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  documents  Document[]
+  id           String     @id @default(uuid()) @db.Uuid
+  taxId        String     @map("tax_id") @db.Char(13)
+  branchCode   String     @default("00000") @map("branch_code") @db.Char(5)
+  name         String
+  /// รหัสคู่ค้า (res.partner) ใน ERP ที่จับคู่หรือสร้างไว้แล้ว
+  erpPartnerId String?    @map("erp_partner_id")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  documents    Document[]
 
   @@unique([taxId, branchCode])
   @@map("vendors")
@@ -131,10 +144,32 @@ model Document {
   whtAmount   Decimal?  @map("wht_amount") @db.Decimal(18, 2)
   netPayable  Decimal?  @map("net_payable") @db.Decimal(18, 2)
 
+  vendorTaxId  String? @map("vendor_tax_id") @db.Char(13)
+  vendorBranch String? @map("vendor_branch") @db.Char(5)
+  vendorName   String? @map("vendor_name")
+  buyerBranch  String? @map("buyer_branch") @db.Char(5)
+
+  /// ข้อมูลที่ตรวจ/แก้ได้ทั้งชุดเป็นสตริง (DocumentData ของ core) — column typed ด้านบนคัดลอกเฉพาะค่าที่ถูกรูปแบบ
+  data             Json @default("{}")
+  /// ความมั่นใจ ตำแหน่ง และค่าที่ AI อ่านได้ราย field
+  fieldMeta        Json @default("{}") @map("field_meta")
+  /// ผลตรวจล่าสุดจาก validateDocument
+  validationIssues Json @default("[]") @map("validation_issues")
+
+  verifiedById String?   @map("verified_by") @db.Uuid
+  verifiedAt   DateTime? @map("verified_at") @db.Timestamptz(6)
+
+  /// เลขอ้างอิงของเอกสารใน ERP หลังส่งสำเร็จ
+  erpTransactionId String?   @map("erp_transaction_id")
+  syncedAt         DateTime? @map("synced_at") @db.Timestamptz(6)
+  /// เหตุผลล่าสุดที่ส่งเข้า ERP ไม่สำเร็จ (แสดงในหน้าจอ)
+  syncError        String?   @map("sync_error")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   uploadedBy    User                    @relation("UploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  verifiedBy    User?                   @relation("VerifiedBy", fields: [verifiedById], references: [id], onDelete: Restrict)
   vendor        Vendor?                 @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   extractions   DocumentExtraction[]
   statusHistory DocumentStatusHistory[]
@@ -155,6 +190,10 @@ model DocumentExtraction {
   raw          Json
   /// รายการสินค้า: ลำดับ รายการ จำนวน ราคาต่อหน่วย ภาษี ยอดสุทธิ bbox confidence
   items        Json     @default("[]")
+  /// เวลาที่ใช้อ่าน (KPI <30 วินาที)
+  durationMs   Int?     @map("duration_ms")
+  /// เหตุผลเมื่อรอบนี้อ่านไม่สำเร็จ
+  error        String?
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   document     Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
 
@@ -195,6 +234,8 @@ model ErpSyncAttempt {
   status        String
   transactionId String?   @map("transaction_id")
   error         String?
+  /// ERP มีรายการของเอกสารนี้อยู่แล้ว จึงใช้รายการเดิม
+  reused        Boolean   @default(false)
   requestedAt   DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
   respondedAt   DateTime? @map("responded_at") @db.Timestamptz(6)
   document      Document  @relation(fields: [documentId], references: [id], onDelete: Restrict)
@@ -222,3 +263,66 @@ model AuditEvent {
   @@index([action, occurredAt])
   @@map("audit_events")
 }
+
+/// การเชื่อมต่อ ERP (แถวเดียว id = 1) — secret เข้ารหัส AES-256-GCM ด้วย ERP_SECRET_KEY (design D5)
+model ErpConnection {
+  id               Int       @id @default(1)
+  /// odoo | webhook
+  adapter          String
+  url              String
+  /// ชื่อฐานข้อมูลของ Odoo (ว่างได้ถ้ามีฐานเดียว)
+  database         String?
+  /// apiMode, login, journalId, purchaseTaxId, expenseAccountId
+  config           Json      @default("{}")
+  secretCiphertext Bytes?    @map("secret_ciphertext")
+  secretIv         Bytes?    @map("secret_iv")
+  secretTag        Bytes?    @map("secret_tag")
+  autoSync         Boolean   @default(false) @map("auto_sync")
+  testedAt         DateTime? @map("tested_at") @db.Timestamptz(6)
+  /// hash ของการตั้งค่าที่ทดสอบผ่านล่าสุด — ไม่ตรงกับปัจจุบัน = ต้องทดสอบใหม่ก่อนเปิดส่งอัตโนมัติ
+  testedHash       String?   @map("tested_hash")
+  updatedById      String?   @map("updated_by") @db.Uuid
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("erp_connections")
+}
+
+/// API key ของระบบภายนอก (spec api-keys, design D1–D2) — เก็บเฉพาะ hash
+model ApiKey {
+  id            String    @id @default(uuid()) @db.Uuid
+  /// บัญชีบริการที่ key ใช้เป็นผู้กระทำ
+  serviceUserId String    @unique @map("service_user_id") @db.Uuid
+  name          String
+  /// ส่วนต้นของ key (หลัง sdes_) ใช้หาแถวและแสดงในหน้าจอ
+  prefix        String    @unique
+  /// SHA-256 (hex) ของ key เต็ม
+  keyHash       String    @map("key_hash") @db.Char(64)
+  /// ขอบเขต: document.upload | document.read
+  scopes        String[]
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt    DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedById   String?   @map("revoked_by") @db.Uuid
+  createdById   String    @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  serviceUser User @relation("ApiKeyServiceUser", fields: [serviceUserId], references: [id], onDelete: Restrict)
+
+  @@map("api_keys")
+}
+
+/// log ระดับ warn/error ของ api/worker (spec system-logs, design D4) — เก็บ 30 วัน
+model SystemLog {
+  id        BigInt   @id @default(autoincrement())
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  service   String
+  level     String
+  context   String?
+  message   String
+  details   Json?
+
+  @@index([createdAt(sort: Desc)])
+  @@index([level, service, createdAt])
+  @@map("system_logs")
+}
+

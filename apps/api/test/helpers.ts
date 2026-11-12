@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Test } from "@nestjs/testing";
+import { Test, type TestingModuleBuilder } from "@nestjs/testing";
 import type { INestApplication } from "@nestjs/common";
 import argon2 from "argon2";
 import request from "supertest";
@@ -11,10 +11,12 @@ useTestDatabase();
 
 export const PASSWORD = "correct-horse-battery-staple";
 
-export async function bootApp(): Promise<INestApplication> {
+/** override ใช้แทน provider บางตัว เช่น นาฬิกาของหน้าภาพรวม */
+export async function bootApp(override?: (b: TestingModuleBuilder) => TestingModuleBuilder): Promise<INestApplication> {
   const { AppModule } = await import("../src/app.module.js");
   const { configureApp } = await import("../src/bootstrap.js");
-  const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const builder = Test.createTestingModule({ imports: [AppModule] });
+  const mod = await (override ? override(builder) : builder).compile();
   const app = configureApp(mod.createNestApplication());
   // listen ครั้งเดียว ให้ supertest ใช้ server เดียวกันได้แม้มีคำขอซ้อนกัน
   await app.listen(0, "127.0.0.1");

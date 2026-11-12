@@ -2,6 +2,8 @@
 name: sdes
 
 x-app-env: &app-env
+  # image ตั้ง NODE_ENV=production — stack dev ไม่ใช้การตรวจค่าตั้งของ production (cookie ไม่ secure, ไม่มี proxy)
+  NODE_ENV: development
   DATABASE_URL: postgresql://sdes_app:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
   DATABASE_OWNER_URL: postgresql://${POSTGRES_OWNER_USER}:${POSTGRES_OWNER_PASSWORD}@postgres:5432/${POSTGRES_DB}
   REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
@@ -14,6 +16,8 @@ x-app-env: &app-env
   CLAMD_HOST: clamav
   CLAMD_PORT: "3310"
   JWT_SECRET: ${JWT_SECRET}
+  # api เข้ารหัส/ทดสอบ, worker ถอดรหัสเพื่อส่งเข้า ERP
+  ERP_SECRET_KEY: ${ERP_SECRET_KEY:-}
   COOKIE_SECURE: ${COOKIE_SECURE:-false}
 
 services:
@@ -86,6 +90,12 @@ services:
     environment:
       <<: *app-env
       PORT: "3000"
+      # rate limit ต่อนาที (spec platform-security)
+      RATE_LIMIT_AUTH: ${RATE_LIMIT_AUTH:-10}
+      RATE_LIMIT_UPLOAD: ${RATE_LIMIT_UPLOAD:-60}
+      # เว็บส่งต่อ /auth และ /api ผ่าน proxy ของ Next — ถ้าไม่เชื่อ X-Forwarded-For จาก proxy ทุกคนจะใช้ IP ของเว็บร่วมกัน
+      # และโดน rate limit ของ login/refresh พร้อมกัน (10 ครั้ง/นาทีรวมทั้งบริษัท)
+      TRUST_PROXY: ${TRUST_PROXY:-loopback, uniquelocal}
     ports: ["${API_PORT:-3000}:3000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -101,7 +111,20 @@ services:
   worker:
     restart: unless-stopped
     build: { context: ., args: { APP: worker } }
-    environment: *app-env
+    environment:
+      <<: *app-env
+      # การอ่านเอกสาร (design D1) — API key อยู่เฉพาะ worker ไม่ส่งให้ api
+      EXTRACTION_PROVIDER: ${EXTRACTION_PROVIDER:-fake}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # ว่าง = รุ่นเริ่มต้นของ provider (claude-opus-5-5 / gemini-3.8-flash)
+      EXTRACTION_MODEL: ${EXTRACTION_MODEL:-}
+      EXTRACTION_EFFORT: ${EXTRACTION_EFFORT:-low}
+      EXTRACTION_TIMEOUT_MS: ${EXTRACTION_TIMEOUT_MS:-120000}
+      EXTRACTION_FIXTURE_DIR: /fixtures
+    volumes:
+      # เฉลยของ fixture provider (ชุดทดสอบ) — อ่านอย่างเดียว
+      - ${EXTRACTION_FIXTURE_HOST_DIR:-./.fixtures}:/fixtures:ro
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -112,7 +135,59 @@ services:
       timeout: 3s
       retries: 12
 
+  # ---- Odoo สำหรับพัฒนาและทดสอบการส่ง ERP (design D10) — เปิดเมื่อต้องการ: docker compose --profile odoo up -d ----
+  odoo-db:
+    profiles: ["odoo"]
+    restart: unless-stopped
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD:-odoo-dev-only}
+    volumes: [odoo-dbdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  odoo:
+    profiles: ["odoo"]
+    restart: unless-stopped
+    # odoo:19 + ฟอนต์ไทยสำหรับ PDF (docker/odoo/Dockerfile)
+    build: docker/odoo
+    image: sdes-odoo:19
+    # ฐานเดียว sdes_erp — JSON-2 จึงไม่ต้องส่ง X-Odoo-Database
+    command: ["--db-filter=^sdes_erp$$"]
+    environment:
+      HOST: odoo-db
+      USER: odoo
+      PASSWORD: ${ODOO_DB_PASSWORD:-odoo-dev-only}
+    ports: ["${ODOO_HOST_PORT:-8069}:8069"]
+    volumes: [odoo-data:/var/lib/odoo]
+    depends_on:
+      odoo-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8069/web/login', timeout=5)\""]
+      interval: 10s
+      timeout: 8s
+      retries: 30
+
+  # จับอีเมลที่ Odoo ส่ง (เช่น แจ้งการชำระเงินถึงผู้ขาย) ไว้ดูที่ http://127.0.0.1:8025 — ไม่ส่งออกไปจริง
+  mailpit:
+    profiles: ["odoo"]
+    restart: unless-stopped
+    image: axllent/mailpit:v1.31.0
+    ports: ["${MAILPIT_HOST_PORT:-8025}:8025"]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
 volumes:
+  odoo-dbdata:
+  odoo-data:
   pgdata:
   redisdata:
   s3data:

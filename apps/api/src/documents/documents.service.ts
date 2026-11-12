@@ -8,7 +8,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { Request } from "express";
-import { DOCUMENT_STATUSES, TransitionError, type Actor, type DocumentStatus } from "@sdes/core";
+import sharp from "sharp";
+import { DOCUMENT_STATUSES, TransitionError, asDocumentData, type Actor, type DocumentStatus } from "@sdes/core";
 import { Prisma, StaleDocumentError, transitionDocument, type PrismaClient } from "@sdes/db";
 import { AuditService } from "../audit/audit.service.js";
 import type { Principal } from "../auth/decorators.js";
@@ -172,12 +173,18 @@ export class DocumentsService {
         docNo: d.docNo,
         status: d.status,
         fileName: d.fileName,
-        vendorName: d.vendor?.name ?? null,
+        vendorName: d.vendor?.name ?? d.vendorName ?? null,
         invoiceNo: d.invoiceNo,
+        // จำนวนรายการที่ต้องแก้ก่อนยืนยัน (ผลตรวจระดับ ERROR) แสดงในคิว
+        issueCount: Array.isArray(d.validationIssues)
+          ? (d.validationIssues as { severity?: string }[]).filter((i) => i.severity === "ERROR").length
+          : 0,
         invoiceDate: d.invoiceDate,
         grandTotal: d.grandTotal?.toFixed(2) ?? null,
         confidence: d.confidence?.toString() ?? null,
         riskFlags: d.riskFlags,
+        erpTransactionId: d.erpTransactionId,
+        syncError: d.status === "SYNC_FAILED" ? d.syncError : null,
         createdAt: d.createdAt,
         updatedAt: d.updatedAt,
       })),
@@ -188,15 +195,33 @@ export class DocumentsService {
   async get(id: string) {
     const d = await this.prisma.document.findUnique({
       where: { id },
-      include: { statusHistory: { orderBy: { id: "asc" } }, vendor: true, uploadedBy: { select: { displayName: true } } },
+      include: {
+        statusHistory: { orderBy: { id: "asc" } },
+        vendor: true,
+        uploadedBy: { select: { displayName: true } },
+        syncAttempts: { orderBy: [{ requestedAt: "asc" }, { attempt: "asc" }] },
+      },
     });
     if (!d) throw new NotFoundException("ไม่พบเอกสาร");
     const actorIds = [...new Set(d.statusHistory.map((h) => h.actorUserId).filter((x): x is string => !!x))];
     const actors = await this.prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, displayName: true } });
     const name = new Map(actors.map((a) => [a.id, a.displayName]));
-    const { statusHistory, storageKey: _key, ...doc } = d;
+    const { statusHistory, syncAttempts, storageKey: _key, ...doc } = d;
     return {
       ...doc,
+      // jsonb ค่าเริ่มต้นเป็น {} — ส่งให้หน้าตรวจครบทุก field เสมอ
+      data: asDocumentData(doc.data),
+      // ประวัติการส่งเข้า ERP ทุกครั้ง (spec erp-sync "Attempt history")
+      syncAttempts: syncAttempts.map((a) => ({
+        attempt: a.attempt,
+        adapter: a.adapter,
+        status: a.status,
+        transactionId: a.transactionId,
+        reused: a.reused,
+        error: a.error,
+        requestedAt: a.requestedAt,
+        respondedAt: a.respondedAt,
+      })),
       confidence: d.confidence?.toString() ?? null,
       history: statusHistory.map((h) => ({
         id: h.id.toString(),
@@ -217,6 +242,23 @@ export class DocumentsService {
       this.audit.record(tx, { actor: { kind: "user", userId: user.userId }, action: "document.file_viewed", entityType: "document", entityId: id, ip }),
     );
     return { url, expiresIn: FILE_URL_TTL_SECONDS, sha256: d.sha256 };
+  }
+
+  /** ไฟล์ต้นฉบับสำหรับตัวแสดงเอกสาร: PDF/JPG/PNG ส่งตามเดิม, TIFF ส่งเป็น PNG ทีละหน้า */
+  async fileContent(id: string, page: number | undefined, user: Principal, ip?: string) {
+    const d = await this.prisma.document.findUnique({ where: { id }, select: { storageKey: true, mimeType: true } });
+    if (!d) throw new NotFoundException("ไม่พบเอกสาร");
+    const original = await this.storage.getOriginal(d.storageKey);
+    // บันทึกการเปิดครั้งเดียวต่อการเปิดเอกสาร (หน้าแรก) ไม่ใช่ทุกหน้า
+    if (!page || page === 1) {
+      await this.prisma.$transaction((tx) =>
+        this.audit.record(tx, { actor: { kind: "user", userId: user.userId }, action: "document.file_viewed", entityType: "document", entityId: id, ip }),
+      );
+    }
+    if (d.mimeType !== "image/tiff") return { contentType: d.mimeType, body: original };
+    const pageCount = (await sharp(original).metadata()).pages ?? 1;
+    const index = Math.min(Math.max((page ?? 1) - 1, 0), pageCount - 1);
+    return { contentType: "image/png", body: await sharp(original, { page: index }).png().toBuffer(), pageCount };
   }
 
   /** "อ่านใหม่" สำหรับเอกสาร FAILED โดยไม่ต้องอัปโหลดใหม่ */
